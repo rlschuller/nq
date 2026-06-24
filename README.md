@@ -31,7 +31,7 @@ since the model queries are POST requests implemented with builtin libraries.
 
 1. If the instruction does not name a field, the model assumes raw line-separated values
 
-   <img src="https://github.com/user-attachments/assets/fe5461c9-3df0-476b-ae49-9220bb9d9f4a" width="50%"/>
+   <img src="https://github.com/user-attachments/assets/fe5461c9-3df0-476b-ae49-9220bb9d9f4a" width="43%"/>
 
 2. Conversely, for named entries it interprets the input as JSONL (i.e., one valid JSON per line)
 
