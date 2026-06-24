@@ -77,14 +77,30 @@ with open(f"{home}/.config/nq/template.md", "r") as f:
 with open(f"{home}/.config/nq/api.json", "r") as f:
     api_config = json.load(f)
 
+with open(f"{home}/.config/nq/config.json", "r") as f:
+    config = json.load(f)
+
 
 prompt = template.replace("{{prompt}}", " ".join(args.prompt).strip())
 
 try:
     reply = llm_completion(prompt, api_config)
 
+    cmd = ["python3", "-c", reply]
+    if config["container"]:
+        cmd = [
+                "bwrap",
+                "--ro-bind", "/usr", "/usr",
+                "--symlink", "usr/lib64", "/lib64",
+                "--unshare-all",
+                "--new-session",
+                sys.executable, "-c", reply
+                ]
+    else:
+        print('unsafe')
+
     process = subprocess.Popen(
-        ["python3", "-c", reply],
+        cmd,
         stdin=sys.stdin,
         text=True
     )
@@ -94,7 +110,7 @@ except Exception as e:
     print(f"An error occurred: {e}")
     traceback.print_exc()
 finally:
-    if args.debug and 'reply' in globals():
+    if (args.debug or config['always_debug']) and 'reply' in globals():
         is_interactive = sys.stderr.isatty()
         if is_interactive:
             print("\033[36m", end='', file=sys.stderr)
