@@ -1,0 +1,11 @@
+{
+    "url": "http://localhost:4003",
+    "key": "none",
+    "payload": {
+        "model": "google/gemma-4-31B-it",
+        "reasoning": {
+            "effort": "none"
+        }
+    }
+}
+
