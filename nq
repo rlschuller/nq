@@ -87,7 +87,7 @@ try:
     reply = llm_completion(prompt, api_config)
 
     cmd = ["python3", "-c", reply]
-    if config["container"]:
+    if config["sandbox"]:
         cmd = [
                 "bwrap",
                 "--ro-bind", "/usr", "/usr",

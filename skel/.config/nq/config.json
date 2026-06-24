@@ -1,4 +1,4 @@
 {
-    "container": true,
+    "sandbox": true,
     "always_debug": false
 }
