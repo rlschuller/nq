@@ -29,6 +29,12 @@ since the model queries are POST requests implemented with builtin libraries.
 
 ## Examples
 
-![](https://github.com/user-attachments/assets/fe5461c9-3df0-476b-ae49-9220bb9d9f4a)
+1. If the instruction does not name a field, the model assumes raw line-separated values
 
-![](https://github.com/user-attachments/assets/18cf3c85-d1d5-4169-a3f2-f6761fd86a1f)
+   <img src="https://github.com/user-attachments/assets/fe5461c9-3df0-476b-ae49-9220bb9d9f4a" width="50%"/>
+
+2. Conversely, for named entries it interprets the input as JSONL (i.e., one valid JSON per line)
+
+   <img src="https://github.com/user-attachments/assets/18cf3c85-d1d5-4169-a3f2-f6761fd86a1f" width="50%"/>
+
+   Note: in some situations it's better to explicity name a field, e.g. 'mean of the field number'.
