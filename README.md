@@ -1,10 +1,11 @@
 # nq
 
-`nq` is a line filter that uses natural language as the programming interface,
-designed as an alternative to `jq` / `awk`. Given a prompt, e.g. 'sum the odd
-numbers', it prompts an LLM to produce a self-contained Python script that
-takes data from stdin and prints the answers to stdout. It assumes that each
-line is either a raw entry or a JSON formatted entry, e.g.
+Natural queries, or nq for short, is a line filter with natural language as the
+programming interface. Given a program, e.g. 'sum the odd numbers', it prompts
+an LLM to produce a self-contained Python script that takes data from stdin and
+prints the answers to stdout. Drawing from classical commands such as awk and
+jq, nq assumes that each line is either a raw value or a JSON formatted entry,
+e.g.
 
 one name per line
 
@@ -23,10 +24,11 @@ or
 ...
 ```
 
-
-It has 0 dependencies besides Python and bubblewrap (see Security), since it
-queries LLM's via urllib POST requests.
-
+nq has 0 dependencies besides Python (and optionally bubblewrap, see Security),
+since the model queries are POST requests implemented with builtin libraries.
 
 ## Examples
 
+![](https://github.com/user-attachments/assets/fe5461c9-3df0-476b-ae49-9220bb9d9f4a)
+
+![](https://github.com/user-attachments/assets/18cf3c85-d1d5-4169-a3f2-f6761fd86a1f)
