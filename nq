@@ -94,7 +94,7 @@ try:
                 "--symlink", "usr/lib64", "/lib64",
                 "--unshare-all",
                 "--new-session",
-                sys.executable, "-c", reply
+                "python3", "-c", reply
                 ]
     else:
         print('unsafe')
