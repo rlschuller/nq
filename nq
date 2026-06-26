@@ -26,7 +26,7 @@ def llm_completion(prompt, api_config):
         api_config['url'] = api_config['url'][:-1]
 
     url = api_config['url'] + "/v1/responses"
-    payload = api_config['payload']
+    payload = api_config['payload'].copy()
 
 
     payload['input'] = [ { "role": "user", "content": prompt } ]
@@ -86,7 +86,6 @@ prompt = template.replace("{{prompt}}", " ".join(args.prompt).strip())
 try:
     reply = llm_completion(prompt, api_config)
 
-    cmd = ["python3", "-c", reply]
     if config["sandbox"]:
         cmd = [
                 "bwrap",
@@ -97,7 +96,7 @@ try:
                 "python3", "-c", reply
                 ]
     else:
-        print('unsafe')
+        cmd = ["python3", "-c", reply]
 
     process = subprocess.Popen(
         cmd,
@@ -114,11 +113,7 @@ finally:
         is_interactive = sys.stderr.isatty()
         if is_interactive:
             print("\033[36m", end='', file=sys.stderr)
-        header  = "#!/usr/bin/env python3\n\n"
-        header +=  "#   prompt: " + " ".join(args.prompt).strip() + "\n"
-        header += ("# template: " + 
-                   hashlib.sha256(template.encode()).hexdigest()[:32] + "\n\n"
-                   )
+        header  = "#!/usr/bin/env python3\n"
         print(header + reply.strip(), file=sys.stderr)
         if is_interactive:
             print("\033[0m", end='', file=sys.stderr)
