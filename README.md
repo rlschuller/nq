@@ -29,18 +29,100 @@ since the model queries are POST requests implemented with builtin libraries.
 
 ## Examples
 
-1. If the instruction does not name a field, the model assumes raw
-   line-separated values
+In the examples, we use the -db/--debug flag, to make nq print the generated
+code to stderr. You can set always_debug to true in ~/.config/nq/config.json to
+show the code by default.
 
-   <img src="https://github.com/user-attachments/assets/fe5461c9-3df0-476b-ae49-9220bb9d9f4a" width="43%"/>
+### Default input format
 
-2. Conversely, for named entries it interprets the input as JSONL (i.e., one
-   valid JSON per line)
+If the instruction does not name a field or use a generic name, the model
+assumes raw line-separated values
 
-   <img src="https://github.com/user-attachments/assets/18cf3c85-d1d5-4169-a3f2-f6761fd86a1f" width="50%"/>
+```
+$ seq 20 | nq -db select fibonacci numbers
+```
 
-   Note: in some situations it's better to explicitly name a field, e.g. 'mean
-   of the number field'.
+**stdout**
+
+```
+1
+2
+3
+5
+8
+13
+```
+
+**stderr**
+
+```python
+#!/usr/bin/env python3
+import sys
+
+def is_perfect_square(n):
+    if n < 0:
+        return False
+    sqrt_n = int(n**0.5)
+    return sqrt_n * sqrt_n == n
+
+def is_fibonacci(n):
+    # A number is Fibonacci if and only if (5*n^2 + 4) or (5*n^2 - 4) is a perfect square
+    if n < 0:
+        return False
+    return is_perfect_square(5 * n**2 + 4) or is_perfect_square(5 * n**2 - 4)
+
+for line in sys.stdin:
+    try:
+        val = int(line.strip())
+        if is_fibonacci(val):
+            print(val)
+    except ValueError:
+        continue
+```
+
+### JSONL input format
+
+For named entries it interprets the input as JSONL (i.e., one valid JSON per
+line)
+
+the contents of movies.jsonl:
+
+```
+{ "year" : 1968, "title": "2001: A Space Odyssey" }
+{ "year" : 1982, "title": "Blade Runner" }
+{ "year" : 1968, "title": "Planet of the Apes" }
+```
+
+```
+$ cat movies.json | nq -db get title
+```
+
+**stdout**
+
+```
+2001: A Space Odyssey
+Blade Runner
+Planet of the Apes
+```
+
+**stderr**
+
+```python
+#!/usr/bin/env python3
+import sys
+import json
+
+for line in sys.stdin:
+    try:
+        data = json.loads(line)
+        if "title" in data:
+            print(data["title"])
+    except json.JSONDecodeError:
+        continue
+```
+
+Note: to avoid ambiguities, you can explicitly name a field, e.g. 'mean of the
+number field'.
 
 ## Installation
 
