@@ -62,7 +62,13 @@ parser.add_argument(
     "-db",
     "--debug",
     action="store_true",
-    help="print generated code to stderr"
+    help="print generated code to stderr (set always_debug to true in ~/.config/nq/config.json to make it default)"
+)
+parser.add_argument(
+    "-nl",
+    "--no-log",
+    action="store_true",
+    help="disable log, even if log_path is not null in ~/.config/nq/config.json"
 )
 parser.add_argument(
     "prompt",
@@ -80,8 +86,8 @@ with open(f"{home}/.config/nq/api.json", "r") as f:
 with open(f"{home}/.config/nq/config.json", "r") as f:
     config = json.load(f)
 
-
-prompt = template.replace("{{prompt}}", " ".join(args.prompt).strip())
+user_prompt = " ".join(args.prompt).strip()
+prompt = template.replace("{{prompt}}", user_prompt)
 
 try:
     reply = llm_completion(prompt, api_config)
@@ -105,6 +111,18 @@ try:
     )
 
     process.communicate()
+
+    if config['log_path'] is not None and not args.no_log:
+        log_path = os.path.expanduser(config['log_path'])
+        with open(log_path, 'a') as f:
+            f.write(json.dumps({
+                "prompt": user_prompt,
+                "template_sha256": hashlib.sha256(template.encode()).hexdigest()[:32],
+                "payload": api_config['payload'],
+                "output": reply,
+                })+"\n")
+
+        
 except Exception as e:
     print(f"An error occurred: {e}")
     traceback.print_exc()

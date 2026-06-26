@@ -1,4 +1,5 @@
 {
     "sandbox": true,
-    "always_debug": false
+    "always_debug": false,
+    "log_path": null
 }
