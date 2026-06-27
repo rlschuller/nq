@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
@@ -26,16 +27,11 @@ def llm_request(prompt, api_config):
         "Authorization": f"Bearer {api_config['key']}",
         "Content-Type": "application/json",
     }
-
     while api_config['url'][-1] == "/":
         api_config['url'] = api_config['url'][:-1]
-
     url = api_config['url'] + "/v1/responses"
     payload = api_config['payload'].copy()
-
-
     payload['input'] = [ { "role": "user", "content": prompt } ]
-
     data = json.dumps(payload).encode("utf-8")
     req = Request(
             url,
@@ -56,6 +52,11 @@ def llm_request(prompt, api_config):
             f"API Error (Status {e.code}): {error_info}"
         ) from e
 
+def batch_llm_request(batch, api_config):
+    def _request(prompt):
+        return llm_request(prompt, api_config)
+    with ThreadPoolExecutor(max_workers=len(batch)) as executor:
+        return list(executor.map(_request, batch))
 
 parser = argparse.ArgumentParser("nq",
     description="same as jq, but make queries with natural language"
@@ -65,6 +66,13 @@ parser.add_argument(
     "--language",
     action="store_true",
     help="parse the lines using the LLM instead of creating a Python program"
+)
+parser.add_argument(
+    "-bs",
+    "--batch_size",
+    default=32,
+    type=int,
+    help="batch size for language mode"
 )
 parser.add_argument(
     "-db",
@@ -103,13 +111,22 @@ user_prompt = " ".join(args.prompt).strip()
 
 
 if args.language:
+    inputs = []
+    prompts = []
     for line in sys.stdin:
+        inputs.append(line.strip())
         prompt = template.replace("{{prompt}}", user_prompt)
-        prompt = prompt.replace("{{data}}", line)
-
-        reply = llm_request(prompt, api_config)
-
-        print(json.dumps({"in":line.strip(),"out":reply.strip()}))
+        prompt = prompt.replace("{{data}}", line.strip())
+        prompts.append(prompt)
+        if len(prompts) >= args.batch_size:
+            reply = batch_llm_request(prompts, api_config)
+            for x in zip(inputs, reply):
+                print(json.dumps({"i":x[0],"o":x[1].strip()}, ensure_ascii=False))
+            prompts = []
+            inputs = []
+    reply = batch_llm_request(prompts, api_config)
+    for x in zip(inputs, reply):
+        print(json.dumps({"i":x[0],"o":x[1].strip()}, ensure_ascii=False))
 else:
     prompt = template.replace("{{prompt}}", user_prompt)
     try:
@@ -147,7 +164,6 @@ else:
 
             
     except Exception as e:
-        print(f"An error occurred: {e}")
         traceback.print_exc()
     finally:
         if (args.debug or config['always_debug']) and 'reply' in globals():
