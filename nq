@@ -9,6 +9,7 @@ import re
 import subprocess
 from subprocess import Popen 
 import sys
+from time import time
 import traceback
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -59,13 +60,19 @@ def batch_llm_request(batch, api_config):
         return list(executor.map(_request, batch))
 
 parser = argparse.ArgumentParser("nq",
-    description="same as jq, but make queries with natural language"
+    description="make queries with natural language"
 )
 parser.add_argument(
     "-l",
     "--language",
     action="store_true",
     help="parse the lines using the LLM instead of creating a Python program"
+)
+parser.add_argument(
+    "-0",
+    "--null",
+    action="store_true",
+    help="use NULL as entry splitter instead of newline (language mode only)"
 )
 parser.add_argument(
     "-bs",
@@ -113,7 +120,15 @@ user_prompt = " ".join(args.prompt).strip()
 if args.language:
     inputs = []
     prompts = []
-    for line in sys.stdin:
+    i = 0
+
+    if args.null:
+        sep = '\0'
+    else:
+        sep = '\n'
+    v = sys.stdin.read().strip(sep).split(sep)
+    start = time()
+    for line in v:
         inputs.append(line.strip())
         prompt = template.replace("{{prompt}}", user_prompt)
         prompt = prompt.replace("{{data}}", line.strip())
@@ -121,12 +136,34 @@ if args.language:
         if len(prompts) >= args.batch_size:
             reply = batch_llm_request(prompts, api_config)
             for x in zip(inputs, reply):
-                print(json.dumps({"i":x[0],"o":x[1].strip()}, ensure_ascii=False))
+                print(json.dumps({"i": i, "in":x[0], "out":x[1].strip()}, ensure_ascii=False))
+                i += 1
+
+            dt = int((len(v) - i) * (time()-start)/i)
+            sec = dt % 60
+            min = (dt // 60) % 60
+            h = dt // 3600
+
+            if i < len(v):
+                str_dt = ""
+                if h > 0:
+                    str_dt += f"{h}h "
+                if min > 0:
+                    str_dt += f"{min}m "
+                if sec > 0:
+                    str_dt += f"{sec}s "
+                print(f'{int(100 * i / len(v)):4d}%, ETA: {str_dt}\r', file=sys.stderr, end='')
+
             prompts = []
             inputs = []
-    reply = batch_llm_request(prompts, api_config)
-    for x in zip(inputs, reply):
-        print(json.dumps({"i":x[0],"o":x[1].strip()}, ensure_ascii=False))
+
+    if len(inputs) > 0:
+        reply = batch_llm_request(prompts, api_config)
+        for x in zip(inputs, reply):
+            print(json.dumps({"i": i, "in":x[0],"out":x[1].strip()}, ensure_ascii=False))
+            i += 1
+
+    print(f'                                          \r', file=sys.stderr, end='')
 else:
     prompt = template.replace("{{prompt}}", user_prompt)
     try:
