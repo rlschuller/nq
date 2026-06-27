@@ -1,11 +1,17 @@
 # nq
 
 Natural queries, or nq for short, is a line filter with natural language as the
-programming interface. Given a program, e.g. 'sum the odd numbers', it prompts
-an LLM to produce a self-contained Python script that takes data from stdin and
-prints the answers to stdout. Drawing from classical commands such as awk and
-jq, nq assumes that each line is either a raw value or a JSON formatted entry,
-e.g.
+interface. It works by prompting a large language model via an openai / ollama
+API, which means that you can use it with self-hosted LLMs. There are no
+dependencies besides Python (and optionally bubblewrap, see Security), since
+the queries are POST requests implemented with builtin libraries.
+
+## Programmatic mode (default)
+
+Given a program, e.g. 'sum the odd numbers', it prompts an LLM to produce a
+self-contained Python script that takes data from stdin and prints the answers
+to stdout. Drawing from classical commands such as awk and jq, nq assumes that
+each line is either a raw value or a JSON formatted entry, e.g.
 
 one name per line
 
@@ -24,16 +30,13 @@ or
 ...
 ```
 
-nq has 0 dependencies besides Python (and optionally bubblewrap, see Security),
-since the model queries are POST requests implemented with builtin libraries.
+### Examples
 
-## Examples
-
-In the examples, we use the -db/--debug flag, to make nq print the generated
+In the examples, we use the -db / --debug flag, to make nq print the generated
 code to stderr. You can set always_debug to true in ~/.config/nq/config.json to
 show the code by default.
 
-### Default input format
+#### Default input format
 
 If the instruction does not name a field or use a generic name, the model
 assumes raw line-separated values
@@ -80,7 +83,7 @@ for line in sys.stdin:
         continue
 ```
 
-### JSONL input format
+#### JSONL input format
 
 For named entries it interprets the input as JSONL (i.e., one valid JSON per
 line)
@@ -123,6 +126,29 @@ for line in sys.stdin:
 
 Note: to avoid ambiguities, you can explicitly name a field, e.g. 'mean of the
 number field'.
+
+## Language mode
+
+With the -l / --language flag, nq uses the language_template.md to send each
+line from stdin to be processed by the language model.
+
+### Examples
+
+```
+$ cat books | nq -l translate to portuguese
+{"i": "The Linux Programming Interface", "o": "A Interface de Programação do Linux"}
+{"i": "The Human Condition", "o": "A Condição Humana"}
+{"i": "1984", "o": "1984"}
+{"i": "Ensaio Sobre a Cegueira", "o": "Ensaio Sobre a Cegueira"}
+```
+
+```
+$ time cat books | nq -l classify into fiction / nonfiction
+{"i": "The Linux Programming Interface", "o": "nonfiction"}
+{"i": "The Human Condition", "o": "nonfiction"}
+{"i": "1984", "o": "fiction"}
+{"i": "Ensaio Sobre a Cegueira", "o": "fiction"}
+```
 
 ## Installation
 
