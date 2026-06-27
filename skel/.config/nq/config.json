@@ -1,5 +1,6 @@
 {
     "sandbox": true,
     "always_debug": false,
-    "log_path": null
+    "log_path": null,
+    "batch_size": 32
 }

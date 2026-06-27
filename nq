@@ -77,15 +77,22 @@ parser.add_argument(
 parser.add_argument(
     "-bs",
     "--batch_size",
-    default=32,
+    default=None,
     type=int,
-    help="batch size for language mode"
+    metavar="NUM",
 )
 parser.add_argument(
     "-db",
     "--debug",
     action="store_true",
     help="print generated code to stderr (set always_debug to true in ~/.config/nq/config.json to make it default)"
+)
+parser.add_argument(
+    "-t",
+    "--template",
+    type=str,
+    default=None,
+    metavar="PATH"
 )
 parser.add_argument(
     "-nl",
@@ -101,18 +108,28 @@ parser.add_argument(
 args = parser.parse_args()
 home = os.path.expanduser("~")
 
-if args.language:
-    with open(f"{home}/.config/nq/language_template.md", "r") as f:
+
+if args.template is not None:
+    with open(args.template, "r") as f:
         template = f.read()
 else:
-    with open(f"{home}/.config/nq/template.md", "r") as f:
-        template = f.read()
+    if args.language:
+        with open(f"{home}/.config/nq/language_template.md", "r") as f:
+            template = f.read()
+    else:
+        with open(f"{home}/.config/nq/template.md", "r") as f:
+            template = f.read()
 
 with open(f"{home}/.config/nq/api.json", "r") as f:
     api_config = json.load(f)
 
 with open(f"{home}/.config/nq/config.json", "r") as f:
     config = json.load(f)
+
+if args.batch_size is None:
+    batch_size = config['batch_size']
+else:
+    batch_size = args.batch_size
 
 user_prompt = " ".join(args.prompt).strip()
 
@@ -133,7 +150,7 @@ if args.language:
         prompt = template.replace("{{prompt}}", user_prompt)
         prompt = prompt.replace("{{data}}", line.strip())
         prompts.append(prompt)
-        if len(prompts) >= args.batch_size:
+        if len(prompts) >= batch_size:
             reply = batch_llm_request(prompts, api_config)
             for x in zip(inputs, reply):
                 print(json.dumps({"i": i, "in":x[0], "out":x[1].strip()}, ensure_ascii=False))
