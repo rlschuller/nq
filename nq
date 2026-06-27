@@ -12,7 +12,12 @@ import traceback
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-def llm_completion(prompt, api_config):
+def filter_code(code):
+    code = re.findall(r"```python\n[^`]*```", code)[-1]
+    code = code[len("```python\n"):-len("```")]
+    return code
+
+def llm_request(prompt, api_config):
     api_key = "none"
     if not api_key:
         raise ValueError("Please set the OPENAI_API_KEY environment variable.")
@@ -42,11 +47,8 @@ def llm_completion(prompt, api_config):
         with urlopen(req) as response:
             res_body = response.read().decode("utf-8")
             res_json = json.loads(res_body)
-            code = res_json["output"][-1]["content"][-1]["text"]
-
-            code = re.findall(r"```python\n[^`]*```", code)[-1]
-            code = code[len("```python\n"):-len("```")]
-            return code
+            text = res_json["output"][-1]["content"][-1]["text"]
+            return text
 
     except HTTPError as e:
         error_info = e.read().decode("utf-8")
@@ -57,6 +59,12 @@ def llm_completion(prompt, api_config):
 
 parser = argparse.ArgumentParser("nq",
     description="same as jq, but make queries with natural language"
+)
+parser.add_argument(
+    "-l",
+    "--language",
+    action="store_true",
+    help="parse the lines using the LLM instead of creating a Python program"
 )
 parser.add_argument(
     "-db",
@@ -78,8 +86,13 @@ parser.add_argument(
 args = parser.parse_args()
 home = os.path.expanduser("~")
 
-with open(f"{home}/.config/nq/template.md", "r") as f:
-    template = f.read()
+if args.language:
+    with open(f"{home}/.config/nq/language_template.md", "r") as f:
+        template = f.read()
+else:
+    with open(f"{home}/.config/nq/template.md", "r") as f:
+        template = f.read()
+
 with open(f"{home}/.config/nq/api.json", "r") as f:
     api_config = json.load(f)
 
@@ -87,52 +100,62 @@ with open(f"{home}/.config/nq/config.json", "r") as f:
     config = json.load(f)
 
 user_prompt = " ".join(args.prompt).strip()
-prompt = template.replace("{{prompt}}", user_prompt)
 
-try:
-    reply = llm_completion(prompt, api_config)
 
-    if config["sandbox"]:
-        cmd = [
-                "bwrap",
-                "--ro-bind", "/usr", "/usr",
-                "--symlink", "usr/lib64", "/lib64",
-                "--unshare-all",
-                "--new-session",
-                "python3", "-c", reply
-                ]
-    else:
-        cmd = ["python3", "-c", reply]
+if args.language:
+    for line in sys.stdin:
+        prompt = template.replace("{{prompt}}", user_prompt)
+        prompt = prompt.replace("{{data}}", line)
 
-    process = subprocess.Popen(
-        cmd,
-        stdin=sys.stdin,
-        text=True
-    )
+        reply = llm_request(prompt, api_config)
 
-    process.communicate()
+        print(json.dumps({"in":line.strip(),"out":reply.strip()}))
+else:
+    prompt = template.replace("{{prompt}}", user_prompt)
+    try:
+        reply = filter_code(llm_request(prompt, api_config))
 
-    if config['log_path'] is not None and not args.no_log:
-        log_path = os.path.expanduser(config['log_path'])
-        with open(log_path, 'a') as f:
-            f.write(json.dumps({
-                "prompt": user_prompt,
-                "template_sha256": hashlib.sha256(template.encode()).hexdigest()[:32],
-                "payload": api_config['payload'],
-                "output": reply,
-                })+"\n")
+        if config["sandbox"]:
+            cmd = [
+                    "bwrap",
+                    "--ro-bind", "/usr", "/usr",
+                    "--symlink", "usr/lib64", "/lib64",
+                    "--unshare-all",
+                    "--new-session",
+                    "python3", "-c", reply
+                    ]
+        else:
+            cmd = ["python3", "-c", reply]
 
-        
-except Exception as e:
-    print(f"An error occurred: {e}")
-    traceback.print_exc()
-finally:
-    if (args.debug or config['always_debug']) and 'reply' in globals():
-        is_interactive = sys.stderr.isatty()
-        if is_interactive:
-            print("\033[36m", end='', file=sys.stderr)
-        header  = "#!/usr/bin/env python3\n"
-        print(header + reply.strip(), file=sys.stderr)
-        if is_interactive:
-            print("\033[0m", end='', file=sys.stderr)
+        process = subprocess.Popen(
+            cmd,
+            stdin=sys.stdin,
+            text=True
+        )
+
+        process.communicate()
+
+        if config['log_path'] is not None and not args.no_log:
+            log_path = os.path.expanduser(config['log_path'])
+            with open(log_path, 'a') as f:
+                f.write(json.dumps({
+                    "prompt": user_prompt,
+                    "template_sha256": hashlib.sha256(template.encode()).hexdigest()[:32],
+                    "payload": api_config['payload'],
+                    "output": reply,
+                    })+"\n")
+
+            
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        traceback.print_exc()
+    finally:
+        if (args.debug or config['always_debug']) and 'reply' in globals():
+            is_interactive = sys.stderr.isatty()
+            if is_interactive:
+                print("\033[36m", end='', file=sys.stderr)
+            header  = "#!/usr/bin/env python3\n"
+            print(header + reply.strip(), file=sys.stderr)
+            if is_interactive:
+                print("\033[0m", end='', file=sys.stderr)
 
