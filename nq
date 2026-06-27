@@ -59,6 +59,10 @@ def batch_llm_request(batch, api_config):
     with ThreadPoolExecutor(max_workers=len(batch)) as executor:
         return list(executor.map(_request, batch))
 
+home = os.path.expanduser("~")
+with open(f"{home}/.config/nq/api.json", "r") as f:
+    api_config = json.load(f)
+
 parser = argparse.ArgumentParser("nq",
     description="make queries with natural language"
 )
@@ -101,13 +105,20 @@ parser.add_argument(
     help="disable log, even if log_path is not null in ~/.config/nq/config.json"
 )
 parser.add_argument(
+    "-m",
+    "--model",
+    type=str,
+    default=api_config['default'],
+    choices=[x for x in api_config if x != 'default']
+)
+parser.add_argument(
     "prompt",
     type=str,
     nargs='*',
 )
 args = parser.parse_args()
-home = os.path.expanduser("~")
 
+api_config = api_config[args.model]
 
 if args.template is not None:
     with open(args.template, "r") as f:
@@ -120,8 +131,6 @@ else:
         with open(f"{home}/.config/nq/template.md", "r") as f:
             template = f.read()
 
-with open(f"{home}/.config/nq/api.json", "r") as f:
-    api_config = json.load(f)
 
 with open(f"{home}/.config/nq/config.json", "r") as f:
     config = json.load(f)

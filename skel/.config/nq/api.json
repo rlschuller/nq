@@ -1,10 +1,23 @@
 {
-    "url": "http://localhost:4003",
-    "key": "none",
-    "payload": {
-        "model": "google/gemma-4-31B-it",
-        "reasoning": {
-            "effort": "none"
+    "default": "rick",
+    "rick": {
+        "url": "http://10.0.3.0:11434",
+        "key": "none",
+        "payload": {
+            "model": "gemma4:12b",
+            "reasoning": {
+                "effort": "none"
+            }
+        }
+    },
+    "remote": {
+        "url": "http://localhost:4003",
+        "key": "none",
+        "payload": {
+            "model": "google/gemma-4-31B-it",
+            "reasoning": {
+                "effort": "none"
+            }
         }
     }
 }
