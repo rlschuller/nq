@@ -116,7 +116,7 @@ parser.add_argument(
     type=str,
     nargs='*',
 )
-args = parser.parse_args()
+args,_ = parser.parse_known_args()
 
 api_config = api_config[args.model]
 
@@ -191,6 +191,28 @@ if args.language:
 
     print(f'                                          \r', file=sys.stderr, end='')
 else:
+
+    # try to match regex
+
+    for regex_pattern in config["regex_routing"]:
+        if re.search(regex_pattern, user_prompt) is not None:
+            cmd = config["regex_routing"][regex_pattern]["cmd"]
+            cmd = [
+                x for v in [
+                    [x.replace("{}", y) for y in  sys.argv[1:]] if "{}" in x
+                    else [x] for x in cmd] for x in v
+            ]
+            process = subprocess.Popen(
+                cmd,
+                stdin=sys.stdin,
+                text=True
+            )
+            exit(0)
+
+
+
+
+
     prompt = template.replace("{{prompt}}", user_prompt)
     try:
         reply = filter_code(llm_request(prompt, api_config))

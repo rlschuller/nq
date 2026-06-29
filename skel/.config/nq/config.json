@@ -2,5 +2,12 @@
     "sandbox": true,
     "always_debug": false,
     "log_path": null,
-    "batch_size": 32
+    "batch_size": 32,
+    "regex_routing": {
+        "^[.]|^$": {
+            "cmd": ["jq", "-c", "{}"],
+            "all_args": true,
+            "comment": "forward prompts starting with . or empty to jq"
+        }
+    }
 }
