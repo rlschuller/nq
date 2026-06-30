@@ -135,6 +135,9 @@ else:
 with open(f"{home}/.config/nq/config.json", "r") as f:
     config = json.load(f)
 
+if "python_cmd" not in config:
+    config["python_cmd"] = "python3"
+
 if args.batch_size is None:
     batch_size = config['batch_size']
 else:
@@ -304,10 +307,10 @@ else:
                     "--symlink", "usr/lib64", "/lib64",
                     "--unshare-all",
                     "--new-session",
-                    "python3", "-c", reply
+                    config["python_cmd"], "-c", reply
                     ]
         else:
-            cmd = ["python3", "-c", reply]
+            cmd = [config["python_cmd"], "-c", reply]
 
         process = subprocess.Popen(
             cmd,
