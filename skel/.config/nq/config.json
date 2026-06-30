@@ -5,9 +5,20 @@
     "batch_size": 32,
     "regex_routing": {
         "^[.]|^$": {
-            "cmd": ["jq", "-c", "{}"],
-            "all_args": true,
-            "comment": "forward prompts starting with . or empty to jq"
+            "cmd": ["jq", "-c", "[1:]"],
+            "description": "forward prompts starting with . or empty to jq"
+        },
+        "^select[ ]+[^ \"']+$": {
+            "cmd": ["jq", "-cr", ".\"{1}\""],
+            "word": "[^ \"']+",
+            "join": " ",
+            "description": "forward select <word> to jq"
+        },
+        "^select[ ]+(\"[^ \"]+\"|'[^ \"]+')$": {
+            "cmd": ["jq", "-c", ".\"{1}\""],
+            "word": "[^ \"']+",
+            "join": " ",
+            "description": "forward select '<word>' to jq (quoted)"
         }
     }
 }

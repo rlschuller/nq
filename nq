@@ -193,20 +193,100 @@ if args.language:
 else:
 
     # try to match regex
-
     for regex_pattern in config["regex_routing"]:
+
+        def parse_arg(arg, argv, prompt, word_regex, join_str):
+            if "[]" in  arg:
+                return [ arg.replace("[]", x) for x in argv ]
+
+            m = re.search("\\[[0-9]+\\]", arg)
+            if m is not None:
+                i = int(m[0][1:-1])
+                return [ re.sub("\\[[0-9]+\\]", argv[i], arg) ]
+
+            m = re.search("\\[[0-9]+:\\]", arg)
+            if m is not None:
+                i0 = int(m[0][1:-2])
+                return [ re.sub("\\[[0-9]+:\\]", x, arg) for x in argv[i0:] ]
+
+            m = re.search("\\[:[0-9]+\\]", arg)
+            if m is not None:
+                i1 = int(m[0][2:-1])
+                return [ re.sub("\\[:[0-9]+\\]", x, arg) for x in argv[:i1] ]
+
+            m = re.search("\\[[0-9]+:[0-9]+\\]", arg)
+            if m is not None:
+                i0 = int(m[0].split(":")[0][1:])
+                i1 = int(m[0].split(":")[1][:-1])
+                return [ re.sub("\\[:[0-9]+\\]", x, arg) for x in argv[i0:i1] ]
+
+            if "{}" in  arg:
+                arg = arg.replace("{}", user_prompt)
+
+            v = re.findall(word_regex, user_prompt)
+            m = re.search("{[0-9]+}", arg)
+            while m is not None:
+                i = int(m[0][1:-1])
+                arg = arg.replace(m[0], v[i])
+                m = re.search("{[0-9]+}", arg)
+
+            m = re.search("{[0-9]+:}", arg)
+            while m is not None:
+                i0 = int(m[0][1:-2])
+                arg = arg.replace(m[0], join_str.join(v[i0:]))
+                m = re.search("{[0-9]+:}", arg)
+
+            m = re.search("{:[0-9]+}", arg)
+            while m is not None:
+                i1 = int(m[0][2:-1])
+                arg = arg.replace(m[0], join_str.join(v[:i1]))
+                m = re.search("{:[0-9]+}", arg)
+
+            m = re.search("{[0-9]+:[0-9]+}", arg)
+            while m is not None:
+                i0 = int(m[0].split(":")[0][1:])
+                i1 = int(m[0].split(":")[1][:-1])
+                arg = arg.replace(m[0], join_str.join(v[i0:i1]))
+                m = re.search("{[0-9]+:[0-9]+}", arg)
+
+            return [arg]
+
+
         if re.search(regex_pattern, user_prompt) is not None:
             cmd = config["regex_routing"][regex_pattern]["cmd"]
+            if "word" not in config["regex_routing"][regex_pattern]:
+                config["regex_routing"][regex_pattern]["word"] = "[^ ]"
+            if "join" not in config["regex_routing"][regex_pattern]:
+                config["regex_routing"][regex_pattern]["join"] = " "
             cmd = [
                 x for v in [
-                    [x.replace("{}", y) for y in  sys.argv[1:]] if "{}" in x
-                    else [x] for x in cmd] for x in v
+                    parse_arg(x,
+                              [y for y in sys.argv if y != '-db' and y != "--debug"],
+                              user_prompt,
+                              config["regex_routing"][regex_pattern]["word"],
+                              config["regex_routing"][regex_pattern]["join"]) for x in cmd
+                ] for x in v
             ]
             process = subprocess.Popen(
                 cmd,
                 stdin=sys.stdin,
                 text=True
             )
+
+            process.communicate()
+            sys.stdout.flush()
+            sys.stderr.flush()
+
+            if (args.debug or config['always_debug']):
+                is_interactive = sys.stderr.isatty()
+                if is_interactive:
+                    print("\033[36m", end='', file=sys.stderr)
+                header  = "#!/usr/bin/env python3\n"
+                #print(f"REGEX MATCH ({regex_pattern})\n{json.dumps(config["regex_routing"][regex_pattern], indent=2)}\n{cmd}", file=sys.stderr)
+                print(f"REGEX MATCH ({regex_pattern})\ncmd={cmd}\ndescription: {config["regex_routing"][regex_pattern]["description"]}", file=sys.stderr)
+                if is_interactive:
+                    print("\033[0m", end='', file=sys.stderr)
+
             exit(0)
 
 
