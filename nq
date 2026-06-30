@@ -283,7 +283,7 @@ else:
                     print("\033[36m", end='', file=sys.stderr)
                 header  = "#!/usr/bin/env python3\n"
                 #print(f"REGEX MATCH ({regex_pattern})\n{json.dumps(config["regex_routing"][regex_pattern], indent=2)}\n{cmd}", file=sys.stderr)
-                print(f"REGEX MATCH ({regex_pattern})\ncmd={cmd}\ndescription: {config["regex_routing"][regex_pattern]["description"]}", file=sys.stderr)
+                print(f"REGEX MATCH ({regex_pattern})\ncmd={cmd}\ndescription: {config['regex_routing'][regex_pattern]['description']}", file=sys.stderr)
                 if is_interactive:
                     print("\033[0m", end='', file=sys.stderr)
 
