@@ -79,6 +79,12 @@ parser.add_argument(
     help="use NULL as entry splitter instead of newline (language mode only)"
 )
 parser.add_argument(
+    "-j",
+    "--json",
+    action="store_true",
+    help="parse each line as a json before forwarding to model (language mode only)"
+)
+parser.add_argument(
     "-bs",
     "--batch_size",
     default=None,
@@ -158,6 +164,8 @@ if args.language:
     v = sys.stdin.read().strip(sep).split(sep)
     start = time()
     for line in v:
+        if args.json:
+            line = json.loads(line)
         inputs.append(line.strip())
         prompt = template.replace("{{prompt}}", user_prompt)
         prompt = prompt.replace("{{data}}", line.strip())
