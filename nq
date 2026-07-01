@@ -304,11 +304,13 @@ else:
             cmd = [
                     "bwrap",
                     "--ro-bind", "/usr", "/usr",
+                    "--symlink", "usr/bin",   "/bin",
+                    "--symlink", "usr/lib",   "/lib",
                     "--symlink", "usr/lib64", "/lib64",
                     "--unshare-all",
                     "--new-session",
                     config["python_cmd"], "-c", reply
-                    ]
+            ]
         else:
             cmd = [config["python_cmd"], "-c", reply]
 
