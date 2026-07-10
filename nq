@@ -4,15 +4,92 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
+import math
+from numbers import Number
 import os
 import re
 import subprocess
-from subprocess import Popen 
+from subprocess import Popen
 import sys
 from time import time
 import traceback
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+
+import atexit
+import signal
+import sys
+
+def restore_console():
+    if sys.stderr.isatty():
+        print("\033[0m", end='', file=sys.stderr, flush=True)
+        print('\033[?25h', end='', file=sys.stderr, flush=True)
+
+atexit.register(restore_console)
+#signal.signal(signal.SIGINT,  lambda s, f: sys.exit(1))
+#signal.signal(signal.SIGTERM, lambda s, f: sys.exit(1))
+
+
+SI_PREFIXES = [
+    (10**3,  "k"),
+    (10**6,  "M"),
+    (10**9,  "G"),
+    (10**12, "T"),
+    (10**15, "P"),
+    (10**18, "E"),
+]
+
+
+def format_si(n: int, decimals: int = 2) -> str:
+    """Format an integer with an SI prefix.
+
+    Parameters
+    ----------
+    n : int
+        The integer to format.
+    decimals : int, optional
+        Number of decimal places in the output (default 2).
+
+    Returns
+    -------
+    str
+        Formatted string like ``"1.23k"``, ``"4.56M"``, or ``"789"``.
+
+    Examples
+    --------
+    >>> format_si(1_234)
+    '1.23k'
+    >>> format_si(12_345_678, decimals=1)
+    '12.3M'
+    >>> format_si(999)
+    '999.00'
+    >>> format_si(1_000_000_000_000_000_000)
+    '1.00E'
+    >>> format_si(999_999_999, 0)
+    '1G'
+    """
+
+    if n < 0:
+        return f"-{format_si(-n, decimals)}"
+
+    if n < 10**3:
+        return f"{n}"
+
+    # Pick starting prefix based on magnitude
+    exp = math.floor(math.log10(n))
+    idx = min(exp // 3 - 1, len(SI_PREFIXES) - 1)
+    threshold, prefix = SI_PREFIXES[idx]
+
+    # Bump up if rounding would push the scaled value to 1000+
+    scaled = n / threshold
+    while round(scaled, decimals) >= 1000 and idx < len(SI_PREFIXES) - 1:
+        idx += 1
+        threshold, prefix = SI_PREFIXES[idx]
+        scaled = n / threshold
+
+    return f"{scaled:.{decimals}f}{prefix}"
+
+
 
 def filter_code(code):
     code = re.findall(r"```python\n[^`]*```", code)[-1]
@@ -43,13 +120,15 @@ def llm_request(prompt, api_config):
 
     n_errors = 0
 
+    res_json = None
+
     while True:
         try:
             with urlopen(req) as response:
                 res_body = response.read().decode("utf-8")
                 res_json = json.loads(res_body)
                 text = res_json["output"][-1]["content"][-1]["text"]
-                return text
+                return text, res_json
             break
 
         except HTTPError as e:
@@ -57,10 +136,10 @@ def llm_request(prompt, api_config):
                 n_errors += 1
             else:
                 error_info = e.read().decode("utf-8")
-                return res_json
                 # raise RuntimeError(
                 #     f"API Error (Status {e.code}): {error_info}"
                 # ) from e
+                return None, res_json
 
 home = os.path.expanduser("~")
 with open(f"{home}/.config/nq/api.json", "r") as f:
@@ -127,6 +206,10 @@ parser.add_argument(
 )
 args,_ = parser.parse_known_args()
 
+
+if sys.stderr.isatty():
+    print('\033[?25l', end='', file=sys.stderr)
+
 api_config = api_config[args.model]
 
 if args.template is not None:
@@ -181,30 +264,78 @@ if args.language:
     def run(prompt):
         return llm_request(prompt, api_config)
 
+    cost = 0
+    total_tokens = 0
+    input_tokens = 0
+    cached_tokens = 0
+    output_tokens = 0
     with ThreadPoolExecutor(max_workers=batch_size) as executor:
         str_out = ""
-        for i, reply in enumerate(executor.map(run, prompts)):
-            input = inputs[i] 
+        for i, out in enumerate(executor.map(run, prompts)):
+
+            if "usage" in out[1] and "cost" in out[1]["usage"] and isinstance(out[1]["usage"]["cost"], Number):
+                cost += out[1]["usage"]["cost"]
+
+            if "usage" in out[1] and "total_tokens" in out[1]["usage"]:
+                total_tokens += out[1]["usage"]["total_tokens"]
+
+                # assume that if total_tokes is in usage, input and output also is...
+                input_tokens += out[1]["usage"]["input_tokens"]
+
+                output_tokens += out[1]["usage"]["output_tokens"]
+
+                if "input_tokens_details" in  out[1]["usage"] and   "cached_tokens" in out[1]["usage"]["input_tokens_details"]:
+                    cached_tokens += out[1]["usage"]["input_tokens_details"]["cached_tokens"]
+
+            reply = out[0]
+            input = inputs[i]
             str_out += json.dumps({"i": i, "in":input, "out":reply.strip()}, ensure_ascii=False) + "\n"
 
             if i % 32 == 0 and i != 0:
                 dt = int((len(v) - i) * (time()-start)/i)
                 sec = dt % 60
-                min = (dt // 60) % 60
+                minutes = (dt // 60) % 60
                 h = dt // 3600
 
                 str_dt = ""
                 if h > 0:
                     str_dt += f"{h}h "
-                if min > 0:
-                    str_dt += f"{min}m "
+                if minutes > 0:
+                    str_dt += f"{minutes}m "
                 if sec > 0:
-                    str_dt += f"{sec}s "
+                    str_dt += f"{sec}s"
+
+                estimated_cost = (cost / i) * len(v)
+
+                print('\033[2K', file=sys.stderr, end='', flush=True)
                 print(str_out, end='')
-                print(f'{int(100 * i / len(v)):4d}%, ETA: {str_dt}\r', file=sys.stderr, end='')
+
+                print(f'{"\033[35m" if sys.stderr.isatty() else ""}ETA: {str_dt} ({math.floor(100 * i / len(v)):2d}%) | {format_si(total_tokens)} Tok ({int(100*cached_tokens/input_tokens)}% CH, {format_si(input_tokens)} In, {format_si(output_tokens)} Out) | $ {cost:0.5f} / $ {estimated_cost:0.5f}{"\033[0m" if sys.stderr.isatty() else ""}\r', file=sys.stderr, end='')
                 str_out = ""
 
+        print('\033[2K', file=sys.stderr, end='', flush=True)
         print(str_out, end='')
+
+        dt = int(time()-start)
+        sec = dt % 60
+        minutes = (dt // 60) % 60
+        h = dt // 3600
+
+        str_dt = ""
+        if h > 0:
+            str_dt += f"{h}h "
+        if minutes > 0:
+            str_dt += f"{minutes}m "
+        if sec > 0:
+            str_dt += f"{sec}s"
+
+        if sys.stderr.isatty():
+            print("\033[35m", end='', file=sys.stderr)
+        print(f'{str_dt} | {format_si(total_tokens)} Tok ({int(100*cached_tokens/input_tokens)}% CH, {format_si(input_tokens)} In, {format_si(output_tokens)} Out) | $ {cost:0.5f}', file=sys.stderr)
+        if sys.stderr.isatty():
+            print("\033[0m", end='', file=sys.stderr)
+            print('\033[?25h', end='', file=sys.stderr)
+
 
 else:
 
@@ -294,13 +425,12 @@ else:
             sys.stderr.flush()
 
             if (args.debug or config['always_debug']):
-                is_interactive = sys.stderr.isatty()
-                if is_interactive:
+                if sys.stderr.isatty():
                     print("\033[36m", end='', file=sys.stderr)
                 header  = "#!/usr/bin/env python3\n"
                 #print(f"REGEX MATCH ({regex_pattern})\n{json.dumps(config["regex_routing"][regex_pattern], indent=2)}\n{cmd}", file=sys.stderr)
                 print(f"REGEX MATCH ({regex_pattern})\ncmd={cmd}\ndescription: {config['regex_routing'][regex_pattern]['description']}", file=sys.stderr)
-                if is_interactive:
+                if sys.stderr.isatty():
                     print("\033[0m", end='', file=sys.stderr)
 
             exit(0)
@@ -311,7 +441,7 @@ else:
 
     prompt = template.replace("{{prompt}}", user_prompt)
     try:
-        reply = filter_code(llm_request(prompt, api_config))
+        reply = filter_code(llm_request(prompt, api_config)[0])
 
         if config["sandbox"]:
             cmd = [
@@ -345,16 +475,16 @@ else:
                     "output": reply,
                     })+"\n")
 
-            
+
     except Exception as e:
         traceback.print_exc()
     finally:
         if (args.debug or config['always_debug']) and 'reply' in globals():
-            is_interactive = sys.stderr.isatty()
-            if is_interactive:
+            if sys.stderr.isatty():
                 print("\033[36m", end='', file=sys.stderr)
             header  = "#!/usr/bin/env python3\n"
             print(header + reply.strip(), file=sys.stderr)
-            if is_interactive:
+            if sys.stderr.isatty():
                 print("\033[0m", end='', file=sys.stderr)
+
 
