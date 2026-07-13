@@ -300,7 +300,8 @@ if args.language:
 
             reply = out[0]
             input = inputs[i]
-            str_out += json.dumps({"i": i, "in":input, "out":reply.strip()}, ensure_ascii=False) + "\n"
+            #str_out += json.dumps({"i": i, "in":input, "out":reply.strip()}, ensure_ascii=False) + "\n"
+            str_out += json.dumps(reply.strip(), ensure_ascii=False) + "\n"
 
             if i % 32 == 0 and i != 0:
                 dt = int((len(v) - i) * (time()-start)/i)
