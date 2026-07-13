@@ -1,5 +1,7 @@
 # nq
 
+Disclaimer: this project is experimental.
+
 Natural queries, or nq for short, is a line filter with natural language as the
 interface. It works by prompting a large language model via an openai / ollama
 API, which means that you can use it with self-hosted LLMs. There are no
