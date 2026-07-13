@@ -96,7 +96,7 @@ def filter_code(code):
     code = code[len("```python\n"):-len("```")]
     return code
 
-def llm_request(prompt, api_config):
+def llm_request(prompt, api_config, user_data=None):
     api_key = "none"
     if not api_key:
         raise ValueError("Please set the OPENAI_API_KEY environment variable.")
@@ -109,7 +109,16 @@ def llm_request(prompt, api_config):
         api_config['url'] = api_config['url'][:-1]
     url = api_config['url'] + "/v1/responses"
     payload = api_config['payload'].copy()
-    payload['input'] = [ { "role": "user", "content": prompt } ]
+    payload['input'] = [
+        {"role": "developer", "content": prompt }
+    ]
+
+    if user_data is not None:
+        payload['input'].append(
+            {"role": "user", "content": user_data }
+        )
+
+
     data = json.dumps(payload).encode("utf-8")
     req = Request(
             url,
@@ -255,14 +264,16 @@ if args.language:
             line = json.loads(line)
         inputs.append(line.strip())
         prompt = template.replace("{{prompt}}", user_prompt)
-        prompt = prompt.replace("{{data}}", line.strip())
-        prompts.append(prompt)
+        #prompt = prompt.replace("{{data}}", line.strip())
+        prompts.append((prompt, line.strip()))
 
     start = time()
 
 
-    def run(prompt):
-        return llm_request(prompt, api_config)
+    def run(data):
+        prompt = data[0]
+        user_data = data[1]
+        return llm_request(prompt, api_config, user_data = user_data)
 
     cost = 0
     total_tokens = 0
