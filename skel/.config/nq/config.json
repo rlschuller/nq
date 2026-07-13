@@ -3,7 +3,7 @@
     "sandbox": true,
     "always_debug": false,
     "log_path": null,
-    "batch_size": 32,
+    "max_threads": 32,
     "regex_routing": {
         "^[.]|^$": {
             "cmd": ["jq", "-c", "[1:]"],

@@ -157,62 +157,79 @@ with open(f"{home}/.config/nq/api.json", "r") as f:
 parser = argparse.ArgumentParser("nq",
     description="make queries with natural language"
 )
-parser.add_argument(
-    "-l",
-    "--language",
-    action="store_true",
-    help="parse the lines using the LLM instead of creating a Python program"
-)
-parser.add_argument(
-    "-0",
-    "--null",
-    action="store_true",
-    help="use NULL as entry splitter instead of newline (language mode only)"
-)
-parser.add_argument(
-    "-j",
-    "--json",
-    action="store_true",
-    help="parse each line as a json before forwarding to model (language mode only)"
-)
-parser.add_argument(
-    "-bs",
-    "--batch_size",
-    default=None,
-    type=int,
-    metavar="NUM",
-)
-parser.add_argument(
-    "-db",
-    "--debug",
-    action="store_true",
-    help="print generated code to stderr (set always_debug to true in ~/.config/nq/config.json to make it default)"
-)
-parser.add_argument(
-    "-t",
-    "--template",
-    type=str,
-    default=None,
-    metavar="PATH"
-)
-parser.add_argument(
-    "-nl",
-    "--no-log",
-    action="store_true",
-    help="disable log, even if log_path is not null in ~/.config/nq/config.json"
-)
-parser.add_argument(
+
+general = parser.add_argument_group("general")
+general.add_argument(
     "-m",
     "--model",
     type=str,
     default=api_config['default'],
     choices=[x for x in api_config if x != 'default']
 )
-parser.add_argument(
+general.add_argument(
+    "-t",
+    "--template",
+    type=str,
+    default=None,
+    metavar="PATH"
+)
+general.add_argument(
     "prompt",
     type=str,
     nargs='*',
 )
+
+programming = parser.add_argument_group("programming mode (default)")
+programming.add_argument(
+    "-db",
+    "--debug",
+    action="store_true",
+    help="print generated code to stderr (set always_debug to true in ~/.config/nq/config.json to make it default)"
+)
+programming.add_argument(
+    "-nl",
+    "--no-log",
+    action="store_true",
+    help="disable log, even if log_path is not null in ~/.config/nq/config.json"
+)
+programming.add_argument(
+    "-f",
+    "--jsonl-files",
+    type=str,
+    nargs="+",
+    help="given JSONL files, merge them line-by-line into arrays",
+    metavar="FILE"
+)
+
+language = parser.add_argument_group("language mode")
+language.add_argument(
+    "-l",
+    "--language",
+    action="store_true",
+    help="enter language mode"
+)
+language.add_argument(
+    "-0",
+    "--null",
+    action="store_true",
+    help="use NULL as entry splitter instead of newline"
+)
+language.add_argument(
+    "-j",
+    "--json",
+    action="store_true",
+    help="parse each line as a JSON before forwarding to the model"
+)
+language.add_argument(
+    "-n",
+    "--max_threads",
+    default=None,
+    type=int,
+    metavar="N",
+    help="maximum number of simultaneous connections to the API"
+)
+
+
 args,_ = parser.parse_known_args()
 
 
@@ -239,10 +256,10 @@ with open(f"{home}/.config/nq/config.json", "r") as f:
 if "python_cmd" not in config:
     config["python_cmd"] = "python3"
 
-if args.batch_size is None:
-    batch_size = config['batch_size']
+if args.max_threads is None:
+    max_threads = config['max_threads']
 else:
-    batch_size = args.batch_size
+    max_threads = args.max_threads
 
 user_prompt = " ".join(args.prompt).strip()
 
@@ -280,7 +297,7 @@ if args.language:
     input_tokens = 0
     cached_tokens = 0
     output_tokens = 0
-    with ThreadPoolExecutor(max_workers=batch_size) as executor:
+    with ThreadPoolExecutor(max_workers=max_threads) as executor:
         str_out = ""
         for i, out in enumerate(executor.map(run, prompts)):
 
