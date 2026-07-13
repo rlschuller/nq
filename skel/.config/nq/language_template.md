@@ -1,6 +1,6 @@
-# Instruction
+# Guidelines
 
-Execute the user instruction in a minimalist way, returning only the answer.
+Execute the instruction in a minimalist way, returning only the answer.
 
 Example 1.
 
@@ -14,11 +14,9 @@ Example 2.
  Data: I'm not feeling very good today, because...
  Output: n
 
-# Prompt
+# Instruction
 
 {{prompt}}
 
 # Data
-
-{{data}}
 
