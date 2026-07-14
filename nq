@@ -187,40 +187,12 @@ general.add_argument(
     nargs='*',
 )
 
-programming = parser.add_argument_group("programming mode (default)")
-programming.add_argument(
-    "-db",
-    "--debug",
-    action="store_true",
-    help="print generated code to stderr (set always_debug to true in ~/.config/nq/config.json to make it default)"
-)
-programming.add_argument(
-    "-nl",
-    "--no-log",
-    action="store_true",
-    help="disable log, even if log_path is not null in ~/.config/nq/config.json"
-)
-programming.add_argument(
-    "-f",
-    "--jsonl-files",
-    type=str,
-    nargs="+",
-    help="given JSONL files, merge them line-by-line into arrays",
-    metavar="FILE"
-)
-
-language = parser.add_argument_group("language mode")
-language.add_argument(
-    "-l",
-    "--language",
-    action="store_true",
-    help="enter language mode"
-)
+language = parser.add_argument_group("language mode (default)")
 language.add_argument(
     "-v",
     "--verbose",
     action="store_true",
-    help="instead of echoing the only the response, outputs a dictionary with more information"
+    help="instead of echoing the response, outputs a dictionary with more information"
 )
 language.add_argument(
     "-0",
@@ -242,6 +214,35 @@ language.add_argument(
     metavar="N",
     help="maximum number of simultaneous connections to the API"
 )
+
+programming = parser.add_argument_group("programmatic mode")
+programming.add_argument(
+    "-p",
+    "--prog",
+    action="store_true",
+    help="enter programmatic mode"
+)
+programming.add_argument(
+    "-d",
+    "--debug",
+    action="store_true",
+    help="print generated code to stderr (set always_debug to true in ~/.config/nq/config.json to make it default)"
+)
+programming.add_argument(
+    "-nl",
+    "--no-log",
+    action="store_true",
+    help="disable log, even if log_path is not null in ~/.config/nq/config.json"
+)
+programming.add_argument(
+    "-f",
+    "--jsonl-files",
+    type=str,
+    nargs="+",
+    help="given JSONL files, merge them line-by-line into arrays",
+    metavar="FILE"
+)
+
 
 args = parser.parse_args()
 
@@ -308,7 +309,7 @@ def run_subprocess(cmd):
     sys.stderr.flush()
 
 
-if args.language:
+if not args.programmatic:
     inputs = []
     prompts = []
     i = 0
