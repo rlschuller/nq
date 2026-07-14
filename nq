@@ -151,11 +151,19 @@ def llm_request(prompt, api_config, user_data=None):
                 return None, res_json
 
 home = os.path.expanduser("~")
-with open(f"{home}/.config/nq/api.json", "r") as f:
-    api_config = json.load(f)
+config_folder = os.environ.get("NQ_CONFIG_FOLDER", f"{home}/.config/nq")
+
+api_config = {"default": None}
+
+if os.path.exists(f"{config_folder}/api.json"):
+    with open(f"{config_folder}/api.json", "r") as f:
+        api_config = json.load(f)
 
 parser = argparse.ArgumentParser("nq",
-    description="make queries with natural language"
+    description="make queries with natural language",
+    epilog="environment variables:\n"
+           "  NQ_CONFIG_FOLDER     config directory (default: ~/.config/nq)",
+    formatter_class=argparse.RawDescriptionHelpFormatter,
 )
 
 general = parser.add_argument_group("general")
@@ -243,14 +251,14 @@ if args.template is not None:
         template = f.read()
 else:
     if args.language:
-        with open(f"{home}/.config/nq/language_template.md", "r") as f:
+        with open(f"{config_folder}/language_template.md", "r") as f:
             template = f.read()
     else:
-        with open(f"{home}/.config/nq/template.md", "r") as f:
+        with open(f"{config_folder}/template.md", "r") as f:
             template = f.read()
 
 
-with open(f"{home}/.config/nq/config.json", "r") as f:
+with open(f"{config_folder}/config.json", "r") as f:
     config = json.load(f)
 
 if "python_cmd" not in config:
