@@ -236,7 +236,7 @@ language.add_argument(
 )
 language.add_argument(
     "-n",
-    "--max_threads",
+    "--max-threads",
     default=None,
     type=int,
     metavar="N",
