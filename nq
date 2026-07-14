@@ -263,6 +263,38 @@ else:
 
 user_prompt = " ".join(args.prompt).strip()
 
+def run_subprocess(cmd):
+    if len(args.jsonl_files) > 0:
+        handles = [open(p) for p in args.jsonl_files]
+
+        try:
+            lines = []
+            for vh in zip(*handles):
+                lines.append(json.dumps([json.loads(x) for x in vh]))
+
+            str_stdin = "\n".join(lines)
+            process = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                text=True
+            )
+            process.communicate(input=str_stdin)
+        finally:
+            for h in handles:
+                h.close()
+
+        return
+    else:
+        process = subprocess.Popen(
+            cmd,
+            stdin=sys.stdin,
+            text=True
+        )
+
+    process.communicate()
+    sys.stdout.flush()
+    sys.stderr.flush()
+
 
 if args.language:
     inputs = []
@@ -434,24 +466,29 @@ else:
                 config["regex_routing"][regex_pattern]["word"] = "[^ ]"
             if "join" not in config["regex_routing"][regex_pattern]:
                 config["regex_routing"][regex_pattern]["join"] = " "
+
+            argv = []
+            
+            started_f = False
+            for arg in sys.argv:
+                if arg in ["-f", "--jsonl_files"]:
+                    started_f = True
+                elif arg[0] == '-':
+                    started_f = False
+
+                if arg not in ["-db", "--debug", "--"] and started_f == False:
+                    argv.append(arg)
             cmd = [
                 x for v in [
                     parse_arg(x,
-                              [y for y in sys.argv if y != '-db' and y != "--debug"],
+                              argv,
                               user_prompt,
                               config["regex_routing"][regex_pattern]["word"],
                               config["regex_routing"][regex_pattern]["join"]) for x in cmd
                 ] for x in v
             ]
-            process = subprocess.Popen(
-                cmd,
-                stdin=sys.stdin,
-                text=True
-            )
 
-            process.communicate()
-            sys.stdout.flush()
-            sys.stderr.flush()
+            run_subprocess(cmd)
 
             if (args.debug or config['always_debug']):
                 if sys.stderr.isatty():
@@ -486,13 +523,7 @@ else:
         else:
             cmd = [config["python_cmd"], "-c", reply]
 
-        process = subprocess.Popen(
-            cmd,
-            stdin=sys.stdin,
-            text=True
-        )
-
-        process.communicate()
+        run_subprocess(cmd)
 
         if config['log_path'] is not None and not args.no_log:
             log_path = os.path.expanduser(config['log_path'])
