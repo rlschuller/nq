@@ -3,6 +3,7 @@
     "rick": {
         "url": "http://10.0.3.0:11434",
         "key": "none",
+        "max_threads": 32,
         "payload": {
             "model": "gemma4:12b",
             "reasoning": {
@@ -13,6 +14,7 @@
     "remote": {
         "url": "http://localhost:4003",
         "key": "none",
+        "max_threads": 32,
         "payload": {
             "model": "google/gemma-4-31B-it",
             "reasoning": {

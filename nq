@@ -269,7 +269,7 @@ if "python_cmd" not in config:
     config["python_cmd"] = "python3"
 
 if args.max_threads is None:
-    max_threads = config['max_threads']
+    max_threads = api_config['max_threads']
 else:
     max_threads = args.max_threads
 

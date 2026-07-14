@@ -2,24 +2,5 @@
     "python_cmd": "python3",
     "sandbox": true,
     "always_debug": false,
-    "log_path": null,
-    "max_threads": 32,
-    "regex_routing": {
-        "^[.]|^$": {
-            "cmd": ["jq", "-c", "[1:]"],
-            "description": "forward prompts starting with . or empty to jq"
-        },
-        "^select[ ]+[^ \"']+$": {
-            "cmd": ["jq", "-cr", ".\"{1}\""],
-            "word": "[^ \"']+",
-            "join": " ",
-            "description": "forward select <word> to jq"
-        },
-        "^select[ ]+(\"[^ \"]+\"|'[^ \"]+')$": {
-            "cmd": ["jq", "-c", ".\"{1}\""],
-            "word": "[^ \"']+",
-            "join": " ",
-            "description": "forward select '<word>' to jq (quoted)"
-        }
-    }
+    "log_path": null
 }
