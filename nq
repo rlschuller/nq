@@ -162,7 +162,7 @@ if os.path.exists(f"{config_folder}/api.json"):
 parser = argparse.ArgumentParser("nq",
     description="make queries with natural language",
     epilog="environment variables:\n"
-           "  NQ_CONFIG_FOLDER     config directory (default: ~/.config/nq)",
+           "  NQ_CONFIG_FOLDER      config directory (default: ~/.config/nq)",
     formatter_class=argparse.RawDescriptionHelpFormatter,
 )
 
@@ -215,6 +215,12 @@ language.add_argument(
     "--language",
     action="store_true",
     help="enter language mode"
+)
+language.add_argument(
+    "-v",
+    "--verbose",
+    action="store_true",
+    help="instead of echoing the only the response, outputs a dictionary with more information"
 )
 language.add_argument(
     "-0",
@@ -357,8 +363,11 @@ if args.language:
 
             reply = out[0]
             input = inputs[i]
-            #str_out += json.dumps({"i": i, "in":input, "out":reply.strip()}, ensure_ascii=False) + "\n"
-            str_out += json.dumps(reply.strip(), ensure_ascii=False) + "\n"
+
+            if args.verbose:
+                str_out += json.dumps(out[1], ensure_ascii=False) + "\n"
+            else:
+                str_out += json.dumps(reply.strip(), ensure_ascii=False) + "\n"
 
             if i % 32 == 0 and i != 0:
                 dt = int((len(v) - i) * (time()-start)/i)
