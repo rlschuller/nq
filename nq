@@ -8,6 +8,7 @@ import math
 from numbers import Number
 import os
 import re
+import shutil
 import subprocess
 from subprocess import Popen
 import sys
@@ -198,7 +199,7 @@ language.add_argument(
     "-0",
     "--null",
     action="store_true",
-    help="use NULL as entry splitter instead of newline"
+    help="use NULL as the entry splitter instead of newline"
 )
 language.add_argument(
     "-j",
@@ -221,6 +222,12 @@ programming.add_argument(
     "--prog",
     action="store_true",
     help="enter programmatic mode"
+)
+programming.add_argument(
+    "-e",
+    "--example",
+    action="store_true",
+    help="use the first line in the prompt"
 )
 programming.add_argument(
     "-d",
@@ -255,12 +262,16 @@ if args.template is not None:
     with open(args.template, "r") as f:
         template = f.read()
 else:
-    if args.language:
-        with open(f"{config_folder}/language_template.md", "r") as f:
-            template = f.read()
+    if not args.prog and args.jsonl_files is None:
+        filename = "language_template.md"
     else:
-        with open(f"{config_folder}/template.md", "r") as f:
-            template = f.read()
+        if args.example:
+            filename = "programming_template_with_example.md"
+        else:
+            filename = "programming_template.md"
+
+    with open(f"{config_folder}/{filename}", "r") as f:
+        template = f.read()
 
 
 with open(f"{config_folder}/config.json", "r") as f:
@@ -276,7 +287,7 @@ else:
 
 user_prompt = " ".join(args.prompt).strip()
 
-def run_subprocess(cmd):
+def run_subprocess(cmd, preamble=None):
     if args.jsonl_files is not None:
         handles = [open(p) for p in args.jsonl_files]
 
@@ -285,7 +296,7 @@ def run_subprocess(cmd):
             for vh in zip(*handles):
                 lines.append(json.dumps([json.loads(x) for x in vh]))
 
-            str_stdin = "\n".join(lines)
+            str_stdin = "\n".join(lines)+"\n"
             process = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
@@ -298,18 +309,29 @@ def run_subprocess(cmd):
 
         return
     else:
-        process = subprocess.Popen(
-            cmd,
-            stdin=sys.stdin,
-            text=True
-        )
+        if preamble is not None:
+            process = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                text=True,
+            )
+            process.stdin.write(preamble)
+            shutil.copyfileobj(sys.stdin, process.stdin)
+            process.stdin.close()
+            process.wait()
+        else:
+            process = subprocess.Popen(
+                cmd,
+                stdin=sys.stdin,
+                text=True
+            )
+            process.communicate()
 
-    process.communicate()
     sys.stdout.flush()
     sys.stderr.flush()
 
 
-if not args.programmatic:
+if not args.prog and args.jsonl_files is None:
     inputs = []
     prompts = []
     i = 0
@@ -416,26 +438,37 @@ if not args.programmatic:
 
 else:
 
-
-    prompt = template.replace("{{prompt}}", user_prompt)
     try:
-        reply = filter_code(llm_request(prompt, api_config)[0])
 
-        if config["sandbox"]:
-            cmd = [
-                    "bwrap",
-                    "--ro-bind", "/usr", "/usr",
-                    "--symlink", "usr/bin",   "/bin",
-                    "--symlink", "usr/lib",   "/lib",
-                    "--symlink", "usr/lib64", "/lib64",
-                    "--unshare-all",
-                    "--new-session",
-                    config["python_cmd"], "-c", reply
-            ]
+        preamble = None
+        if len(user_prompt) == 0:
+            cmd = ["cat", "-"]
         else:
-            cmd = [config["python_cmd"], "-c", reply]
+            prompt = template.replace("{{prompt}}", user_prompt)
 
-        run_subprocess(cmd)
+            if args.example:
+                first_line = next(sys.stdin)
+                prompt = prompt.replace("{{example}}", first_line)
+                preamble = first_line
+
+
+            reply = filter_code(llm_request(prompt, api_config)[0])
+
+            if config["sandbox"]:
+                cmd = [
+                        "bwrap",
+                        "--ro-bind", "/usr", "/usr",
+                        "--symlink", "usr/bin",   "/bin",
+                        "--symlink", "usr/lib",   "/lib",
+                        "--symlink", "usr/lib64", "/lib64",
+                        "--unshare-all",
+                        "--new-session",
+                        config["python_cmd"], "-c", reply
+                ]
+            else:
+                cmd = [config["python_cmd"], "-c", reply]
+
+        run_subprocess(cmd, preamble=preamble)
 
         if config['log_path'] is not None and not args.no_log:
             log_path = os.path.expanduser(config['log_path'])
