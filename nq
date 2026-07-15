@@ -448,7 +448,7 @@ else:
                     "prompt": user_prompt,
                     "template_sha256": hashlib.sha256(template.encode()).hexdigest()[:32],
                     "payload": api_config['payload'],
-                    "output": reply,
+                    "output": out[1],
                     })+"\n")
 
 
