@@ -31,12 +31,81 @@ addresses and authorizations in ~/.config/nq/api.json.  Users of UNIX systems
 not based on Linux (such as BSD or macOS) must disable the sandboxing feature
 by setting sandbox to false in ~/.config/nq/config.json.
 
-## Programmatic mode (default)
+## Flags
 
-Given a program, e.g. 'sum the odd numbers', it prompts an LLM to produce a
-self-contained Python script that takes data from stdin and prints the answers
-to stdout. Drawing from classical commands such as awk and jq, nq assumes that
-each line is either a raw value or a JSON formatted entry, e.g.
+```
+usage: nq [-h] [-m {rick,minicpm5,remote,deepseek,gemma}] [-t PATH] [-v] [-0]
+          [-j] [-n N] [-p] [-s] [-d] [-nl] [-f FILE [FILE ...]]
+          [prompt ...]
+
+make queries with natural language
+
+options:
+  -h, --help            show this help message and exit
+
+general:
+  -m, --model {rick,minicpm5,remote,deepseek,gemma}
+  -t, --template PATH
+  prompt
+
+language mode (default):
+  -v, --verbose         instead of echoing the response, outputs a dictionary
+                        with more information
+  -0, --null            use NULL as the entry splitter instead of newline
+  -j, --json            parse each line as a JSON before forwarding to the
+                        model
+  -n, --max-threads N   maximum number of simultaneous connections to the API
+
+programmatic mode:
+  -p, --prog            enter programmatic mode
+  -s, --sample          use the first line in the prompt
+  -d, --debug           print generated code to stderr (set always_debug to
+                        true in ~/.config/nq/config.json to make it default)
+  -nl, --no-log         disable log, even if log_path is not null in
+                        ~/.config/nq/config.json
+  -f, --jsonl-files FILE [FILE ...]
+                        given JSONL files, merge them line-by-line into arrays
+
+environment variables:
+  NQ_CONFIG_FOLDER      config directory (default: ~/.config/nq)
+```
+
+## Language mode
+
+By default, nq uses the language_template.md to send each line from stdin to be
+processed by the language model. There are no real minimum requirements for
+this mode, but in my anecdotal experience models adept in tool use are better
+at following precise output formats. This can be useful for subsequent
+statistical analyses.
+
+### Examples
+
+```
+$ cat books
+The Linux Programming Interface
+The Human Condition
+1984
+Ensaio Sobre a Cegueira
+$ cat books | nq translate to portuguese
+"A Interface de Programação do Linux"
+"A Condição Humana"
+"1984"
+"Ensaio Sobre a Cegueira"
+```
+
+```
+$ cat books | nq classify into fiction / nonfiction
+"nonfiction"
+"nonfiction"
+"fiction"
+"fiction"
+```
+## Programmatic mode
+
+With the -p / --prog flag, nq prompts an LLM to produce a Python script that
+takes input from stdin and prints the answers to stdout. Drawing from classical
+commands such as awk and jq, nq assumes that each line is either a raw value or
+a JSON formatted entry, e.g.
 
 one name per line
 
@@ -57,7 +126,7 @@ or
 
 ### Examples
 
-In the examples, we use the -db / --debug flag, to make nq print the generated
+In the examples, we use the -d / --debug flag, to make nq print the generated
 code to stderr. You can set always_debug to true in ~/.config/nq/config.json to
 show the code by default.
 
@@ -67,7 +136,7 @@ If the instruction does not name a field or use a generic name, the model
 assumes raw line-separated values
 
 ```
-$ seq 20 | nq -db select fibonacci numbers
+$ seq 20 | nq -dp select fibonacci numbers
 ```
 
 **stdout**
@@ -122,7 +191,7 @@ the contents of movies.jsonl:
 ```
 
 ```
-$ cat movies.json | nq -db get title
+$ cat movies.json | nq -dp get title
 ```
 
 **stdout**
@@ -183,32 +252,6 @@ sandboxing due to it's privilege escalation requirements.
 
 Note that even without the guardrails of bubblewrap the attacking surface is
 limited, as the stdin data only interacts with the Python program produced by
-the LLM and thus the code itself cannot be directly altered by it. With that
+the LLM, and thus the code itself cannot be directly altered by it. With that
 said, always be cautious when processing untrusted data.
 
-
-## Language mode
-
-With the -l / --language flag, nq uses the language_template.md to send each
-line from stdin to be processed by the language model. There are no real
-minimum requirements for this mode, but in my anecdotal experience models adept
-in tool use are better at following precise output formats. This can be useful
-for subsequent statistical analyses.
-
-### Examples
-
-```
-$ cat books | nq -l translate to portuguese
-{"i": "The Linux Programming Interface", "o": "A Interface de Programação do Linux"}
-{"i": "The Human Condition", "o": "A Condição Humana"}
-{"i": "1984", "o": "1984"}
-{"i": "Ensaio Sobre a Cegueira", "o": "Ensaio Sobre a Cegueira"}
-```
-
-```
-$ time cat books | nq -l classify into fiction / nonfiction
-{"i": "The Linux Programming Interface", "o": "nonfiction"}
-{"i": "The Human Condition", "o": "nonfiction"}
-{"i": "1984", "o": "fiction"}
-{"i": "Ensaio Sobre a Cegueira", "o": "fiction"}
-```
