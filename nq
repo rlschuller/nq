@@ -40,21 +40,39 @@ SI_PREFIXES = [
     (10**18, "E"),
 ]
 
+def format_dt(dt):
+    sec = dt % 60
+    minutes = (dt // 60) % 60
+    h = dt // 3600
 
-def format_si(n: int, decimals: int = 2) -> str:
+    str_dt = ""
+    if h > 0:
+        str_dt += f"{h}h "
+    if minutes > 0:
+        str_dt += f"{minutes:2d}m "
+    str_dt += f"{sec:2d}s"
+    return str_dt
+
+def format_si(n: int, compact = False) -> str:
     if n < 0:
-        return f"-{format_si(-n, decimals)}"
+        return f"-{format_si(-n)}"
     if n < 10**3:
-        return f"{n}"
+        if compact:
+            return f"{n}"
+        else:
+            return f"{n:6d}"
     exp = math.floor(math.log10(n))
     idx = min(exp // 3 - 1, len(SI_PREFIXES) - 1)
     threshold, prefix = SI_PREFIXES[idx]
     scaled = n / threshold
-    while round(scaled, decimals) >= 1000 and idx < len(SI_PREFIXES) - 1:
+    while scaled >= 1000 and idx < len(SI_PREFIXES) - 1:
         idx += 1
         threshold, prefix = SI_PREFIXES[idx]
         scaled = n / threshold
-    return f"{scaled:.{decimals}f}{prefix}"
+    if compact:
+        return f"{scaled:.2f}{prefix}"
+    else:
+        return f"{scaled:.{1 if scaled >= 100 else 2}f}{prefix}"
 
 
 
@@ -330,6 +348,7 @@ if not args.prog and args.jsonl_files is None:
     output_tokens = 0
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
         str_out = ""
+        last = time()
         for i, out in enumerate(executor.map(run, prompts)):
 
             if "usage" in out[1] and "cost" in out[1]["usage"] and isinstance(out[1]["usage"]["cost"], Number):
@@ -354,47 +373,26 @@ if not args.prog and args.jsonl_files is None:
             else:
                 str_out += json.dumps(reply.strip(), ensure_ascii=False) + "\n"
 
-            if i % 32 == 0 and i != 0:
+            if time() - last > .1 and i != 0:
+                last = time()
                 dt = int((len(v) - i) * (time()-start)/i)
-                sec = dt % 60
-                minutes = (dt // 60) % 60
-                h = dt // 3600
-
-                str_dt = ""
-                if h > 0:
-                    str_dt += f"{h}h "
-                if minutes > 0:
-                    str_dt += f"{minutes}m "
-                if sec > 0:
-                    str_dt += f"{sec}s"
 
                 estimated_cost = (cost / i) * len(v)
 
                 print('\033[2K', file=sys.stderr, end='', flush=True)
                 print(str_out, end='')
 
-                print(f'{"\033[35m" if sys.stderr.isatty() else ""}ETA: {str_dt} ({math.floor(100 * i / len(v)):2d}%) | {format_si(total_tokens)} Tok ({int(100*cached_tokens/input_tokens)}% CH, {format_si(input_tokens)} In, {format_si(output_tokens)} Out) | $ {cost:0.5f} / $ {estimated_cost:0.5f}{"\033[0m" if sys.stderr.isatty() else ""}\r', file=sys.stderr, end='')
+                print(f'{"\033[35m" if sys.stderr.isatty() else ""}ETA: {format_dt(dt)} ({math.floor(100 * i / len(v)):2d}%) | {format_si(total_tokens)} Tok ({int(100*cached_tokens/input_tokens)}% CH, {format_si(input_tokens)} In, {format_si(output_tokens)} Out) | $ {cost:0.5f} / $ {estimated_cost:0.5f}{"\033[0m" if sys.stderr.isatty() else ""}\r', file=sys.stderr, end='')
                 str_out = ""
 
         print('\033[2K', file=sys.stderr, end='', flush=True)
         print(str_out, end='')
 
         dt = int(time()-start)
-        sec = dt % 60
-        minutes = (dt // 60) % 60
-        h = dt // 3600
-
-        str_dt = ""
-        if h > 0:
-            str_dt += f"{h}h "
-        if minutes > 0:
-            str_dt += f"{minutes}m "
-        if sec > 0:
-            str_dt += f"{sec}s"
 
         if sys.stderr.isatty():
             print("\033[35m", end='', file=sys.stderr)
-        print(f'{str_dt} | {format_si(total_tokens)} Tok ({int(100*cached_tokens/input_tokens)}% CH, {format_si(input_tokens)} In, {format_si(output_tokens)} Out) | $ {cost:0.5f}', file=sys.stderr)
+        print(f'{format_dt(dt)} | {format_si(total_tokens,compact=True)} Tok ({int(100*cached_tokens/input_tokens)}% CH, {format_si(input_tokens, compact=True)} In, {format_si(output_tokens, compact=True)} Out) | $ {cost:0.5f}', file=sys.stderr)
         if sys.stderr.isatty():
             print("\033[0m", end='', file=sys.stderr)
             print('\033[?25h', end='', file=sys.stderr)
@@ -422,8 +420,10 @@ else:
                 prompt = prompt.replace("{{sample}}", first_line)
                 preamble = first_line
 
-
-            reply = filter_code(llm_request(prompt, api_config)[0])
+            start = time()
+            out = llm_request(prompt, api_config)
+            dt = int(time()-start)
+            reply = filter_code(out[0])
 
             if config["sandbox"]:
                 cmd = [
@@ -456,9 +456,27 @@ else:
         traceback.print_exc()
     finally:
         if (args.debug or config['always_debug']) and 'reply' in globals():
+
+            cost = 0
+            total_tokens = 0
+            input_tokens = 0
+            output_tokens = 0
+
+            if "usage" in out[1] and "cost" in out[1]["usage"] and isinstance(out[1]["usage"]["cost"], Number):
+                cost += out[1]["usage"]["cost"]
+            if "usage" in out[1] and "total_tokens" in out[1]["usage"]:
+                total_tokens += out[1]["usage"]["total_tokens"]
+
+                # assume that if total_tokes is in usage, input and output also is...
+                input_tokens += out[1]["usage"]["input_tokens"]
+                output_tokens += out[1]["usage"]["output_tokens"]
+
+
             if sys.stderr.isatty():
                 print("\033[36m", end='', file=sys.stderr)
+
             header  = "#!/usr/bin/env python3\n"
+            header += f"# {format_dt(dt)} | {format_si(total_tokens, compact=True)} Tok ({format_si(input_tokens, compact=True)} In, {format_si(output_tokens, compact=True)} Out) | $ {cost:0.5f}\n"
             print(header + reply.strip(), file=sys.stderr)
             if sys.stderr.isatty():
                 print("\033[0m", end='', file=sys.stderr)
