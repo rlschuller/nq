@@ -447,7 +447,14 @@ else:
             prompt = template.replace("{{prompt}}", user_prompt)
 
             if args.example:
-                first_line = next(sys.stdin)
+                if args.jsonl_files:
+                    # fail if first line is not correct
+                    handles = [open(p) for p in args.jsonl_files]
+                    first_line = json.dumps([json.loads(next(h)) for h in handles])
+                    for h in handles:
+                        h.close()
+                else:
+                    first_line = next(sys.stdin)
                 prompt = prompt.replace("{{example}}", first_line)
                 preamble = first_line
 
