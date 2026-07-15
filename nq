@@ -8,6 +8,7 @@ import math
 from numbers import Number
 import os
 import re
+import shutil
 import subprocess
 from subprocess import Popen
 import sys
@@ -39,55 +40,39 @@ SI_PREFIXES = [
     (10**18, "E"),
 ]
 
+def format_dt(dt):
+    sec = dt % 60
+    minutes = (dt // 60) % 60
+    h = dt // 3600
 
-def format_si(n: int, decimals: int = 2) -> str:
-    """Format an integer with an SI prefix.
+    str_dt = ""
+    if h > 0:
+        str_dt += f"{h}h "
+    if minutes > 0:
+        str_dt += f"{minutes:2d}m "
+    str_dt += f"{sec:2d}s"
+    return str_dt
 
-    Parameters
-    ----------
-    n : int
-        The integer to format.
-    decimals : int, optional
-        Number of decimal places in the output (default 2).
-
-    Returns
-    -------
-    str
-        Formatted string like ``"1.23k"``, ``"4.56M"``, or ``"789"``.
-
-    Examples
-    --------
-    >>> format_si(1_234)
-    '1.23k'
-    >>> format_si(12_345_678, decimals=1)
-    '12.3M'
-    >>> format_si(999)
-    '999.00'
-    >>> format_si(1_000_000_000_000_000_000)
-    '1.00E'
-    >>> format_si(999_999_999, 0)
-    '1G'
-    """
-
+def format_si(n: int, compact = False) -> str:
     if n < 0:
-        return f"-{format_si(-n, decimals)}"
-
+        return f"-{format_si(-n)}"
     if n < 10**3:
-        return f"{n}"
-
-    # Pick starting prefix based on magnitude
+        if compact:
+            return f"{n}"
+        else:
+            return f"{n:6d}"
     exp = math.floor(math.log10(n))
     idx = min(exp // 3 - 1, len(SI_PREFIXES) - 1)
     threshold, prefix = SI_PREFIXES[idx]
-
-    # Bump up if rounding would push the scaled value to 1000+
     scaled = n / threshold
-    while round(scaled, decimals) >= 1000 and idx < len(SI_PREFIXES) - 1:
+    while scaled >= 1000 and idx < len(SI_PREFIXES) - 1:
         idx += 1
         threshold, prefix = SI_PREFIXES[idx]
         scaled = n / threshold
-
-    return f"{scaled:.{decimals}f}{prefix}"
+    if compact:
+        return f"{scaled:.2f}{prefix}"
+    else:
+        return f"{scaled:.{1 if scaled >= 100 else 2}f}{prefix}"
 
 
 
@@ -151,70 +136,105 @@ def llm_request(prompt, api_config, user_data=None):
                 return None, res_json
 
 home = os.path.expanduser("~")
-with open(f"{home}/.config/nq/api.json", "r") as f:
-    api_config = json.load(f)
+config_folder = os.environ.get("NQ_CONFIG_FOLDER", f"{home}/.config/nq")
+
+api_config = {"default": None}
+
+if os.path.exists(f"{config_folder}/api.json"):
+    with open(f"{config_folder}/api.json", "r") as f:
+        api_config = json.load(f)
 
 parser = argparse.ArgumentParser("nq",
-    description="make queries with natural language"
+    description="make queries with natural language",
+    epilog="environment variables:\n"
+           "  NQ_CONFIG_FOLDER      config directory (default: ~/.config/nq)",
+    formatter_class=argparse.RawDescriptionHelpFormatter,
 )
-parser.add_argument(
-    "-l",
-    "--language",
-    action="store_true",
-    help="parse the lines using the LLM instead of creating a Python program"
-)
-parser.add_argument(
-    "-0",
-    "--null",
-    action="store_true",
-    help="use NULL as entry splitter instead of newline (language mode only)"
-)
-parser.add_argument(
-    "-j",
-    "--json",
-    action="store_true",
-    help="parse each line as a json before forwarding to model (language mode only)"
-)
-parser.add_argument(
-    "-bs",
-    "--batch_size",
-    default=None,
-    type=int,
-    metavar="NUM",
-)
-parser.add_argument(
-    "-db",
-    "--debug",
-    action="store_true",
-    help="print generated code to stderr (set always_debug to true in ~/.config/nq/config.json to make it default)"
-)
-parser.add_argument(
-    "-t",
-    "--template",
-    type=str,
-    default=None,
-    metavar="PATH"
-)
-parser.add_argument(
-    "-nl",
-    "--no-log",
-    action="store_true",
-    help="disable log, even if log_path is not null in ~/.config/nq/config.json"
-)
-parser.add_argument(
+
+general = parser.add_argument_group("general")
+general.add_argument(
     "-m",
     "--model",
     type=str,
     default=api_config['default'],
     choices=[x for x in api_config if x != 'default']
 )
-parser.add_argument(
+general.add_argument(
+    "-t",
+    "--template",
+    type=str,
+    default=None,
+    metavar="PATH"
+)
+general.add_argument(
     "prompt",
     type=str,
     nargs='*',
 )
-args,_ = parser.parse_known_args()
 
+language = parser.add_argument_group("language mode (default)")
+language.add_argument(
+    "-v",
+    "--verbose",
+    action="store_true",
+    help="instead of echoing the response, outputs a dictionary with more information"
+)
+language.add_argument(
+    "-0",
+    "--null",
+    action="store_true",
+    help="use NULL as the entry splitter instead of newline"
+)
+language.add_argument(
+    "-j",
+    "--json",
+    action="store_true",
+    help="parse each line as a JSON before forwarding to the model"
+)
+language.add_argument(
+    "-n",
+    "--max-threads",
+    default=None,
+    type=int,
+    metavar="N",
+    help="maximum number of simultaneous connections to the API"
+)
+
+programming = parser.add_argument_group("programmatic mode")
+programming.add_argument(
+    "-p",
+    "--prog",
+    action="store_true",
+    help="enter programmatic mode"
+)
+programming.add_argument(
+    "-s",
+    "--sample",
+    action="store_true",
+    help="use the first line in the prompt"
+)
+programming.add_argument(
+    "-d",
+    "--debug",
+    action="store_true",
+    help="print generated code to stderr (set always_debug to true in ~/.config/nq/config.json to make it default)"
+)
+programming.add_argument(
+    "-nl",
+    "--no-log",
+    action="store_true",
+    help="disable log, even if log_path is not null in ~/.config/nq/config.json"
+)
+programming.add_argument(
+    "-f",
+    "--jsonl-files",
+    type=str,
+    nargs="+",
+    help="given JSONL files, merge them line-by-line into arrays",
+    metavar="FILE"
+)
+
+args = parser.parse_args()
 
 if sys.stderr.isatty():
     print('\033[?25l', end='', file=sys.stderr)
@@ -225,29 +245,76 @@ if args.template is not None:
     with open(args.template, "r") as f:
         template = f.read()
 else:
-    if args.language:
-        with open(f"{home}/.config/nq/language_template.md", "r") as f:
-            template = f.read()
+    if not args.prog and args.jsonl_files is None:
+        filename = "language_template.md"
     else:
-        with open(f"{home}/.config/nq/template.md", "r") as f:
-            template = f.read()
+        if args.sample:
+            filename = "programming_template_with_sample.md"
+        else:
+            filename = "programming_template.md"
+
+    with open(f"{config_folder}/{filename}", "r") as f:
+        template = f.read()
 
 
-with open(f"{home}/.config/nq/config.json", "r") as f:
+with open(f"{config_folder}/config.json", "r") as f:
     config = json.load(f)
 
 if "python_cmd" not in config:
     config["python_cmd"] = "python3"
 
-if args.batch_size is None:
-    batch_size = config['batch_size']
+if args.max_threads is None:
+    max_threads = api_config['max_threads']
 else:
-    batch_size = args.batch_size
+    max_threads = args.max_threads
 
 user_prompt = " ".join(args.prompt).strip()
 
+def run_subprocess(cmd, preamble=None):
+    if args.jsonl_files is not None:
+        handles = [open(p) for p in args.jsonl_files]
 
-if args.language:
+        try:
+            lines = []
+            for vh in zip(*handles):
+                lines.append(json.dumps([json.loads(x) for x in vh]))
+
+            str_stdin = "\n".join(lines)+"\n"
+            process = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                text=True
+            )
+            process.communicate(input=str_stdin)
+        finally:
+            for h in handles:
+                h.close()
+
+        return
+    else:
+        if preamble is not None:
+            process = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                text=True,
+            )
+            process.stdin.write(preamble)
+            shutil.copyfileobj(sys.stdin, process.stdin)
+            process.stdin.close()
+            process.wait()
+        else:
+            process = subprocess.Popen(
+                cmd,
+                stdin=sys.stdin,
+                text=True
+            )
+            process.communicate()
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+
+
+if not args.prog and args.jsonl_files is None:
     inputs = []
     prompts = []
     i = 0
@@ -269,7 +336,6 @@ if args.language:
 
     start = time()
 
-
     def run(data):
         prompt = data[0]
         user_data = data[1]
@@ -280,8 +346,9 @@ if args.language:
     input_tokens = 0
     cached_tokens = 0
     output_tokens = 0
-    with ThreadPoolExecutor(max_workers=batch_size) as executor:
+    with ThreadPoolExecutor(max_workers=max_threads) as executor:
         str_out = ""
+        last = time()
         for i, out in enumerate(executor.map(run, prompts)):
 
             if "usage" in out[1] and "cost" in out[1]["usage"] and isinstance(out[1]["usage"]["cost"], Number):
@@ -300,49 +367,32 @@ if args.language:
 
             reply = out[0]
             input = inputs[i]
-            str_out += json.dumps({"i": i, "in":input, "out":reply.strip()}, ensure_ascii=False) + "\n"
 
-            if i % 32 == 0 and i != 0:
+            if args.verbose:
+                str_out += json.dumps(out[1], ensure_ascii=False) + "\n"
+            else:
+                str_out += json.dumps(reply.strip(), ensure_ascii=False) + "\n"
+
+            if time() - last > .1 and i != 0:
+                last = time()
                 dt = int((len(v) - i) * (time()-start)/i)
-                sec = dt % 60
-                minutes = (dt // 60) % 60
-                h = dt // 3600
-
-                str_dt = ""
-                if h > 0:
-                    str_dt += f"{h}h "
-                if minutes > 0:
-                    str_dt += f"{minutes}m "
-                if sec > 0:
-                    str_dt += f"{sec}s"
 
                 estimated_cost = (cost / i) * len(v)
 
                 print('\033[2K', file=sys.stderr, end='', flush=True)
                 print(str_out, end='')
 
-                print(f'{"\033[35m" if sys.stderr.isatty() else ""}ETA: {str_dt} ({math.floor(100 * i / len(v)):2d}%) | {format_si(total_tokens)} Tok ({int(100*cached_tokens/input_tokens)}% CH, {format_si(input_tokens)} In, {format_si(output_tokens)} Out) | $ {cost:0.5f} / $ {estimated_cost:0.5f}{"\033[0m" if sys.stderr.isatty() else ""}\r', file=sys.stderr, end='')
+                print(f'{"\033[35m" if sys.stderr.isatty() else ""}ETA: {format_dt(dt)} ({math.floor(100 * i / len(v)):2d}%) | {format_si(total_tokens)} Tok ({int(100*cached_tokens/input_tokens)}% CH, {format_si(input_tokens)} In, {format_si(output_tokens)} Out) | $ {cost:0.5f} / $ {estimated_cost:0.5f}{"\033[0m" if sys.stderr.isatty() else ""}\r', file=sys.stderr, end='')
                 str_out = ""
 
         print('\033[2K', file=sys.stderr, end='', flush=True)
         print(str_out, end='')
 
         dt = int(time()-start)
-        sec = dt % 60
-        minutes = (dt // 60) % 60
-        h = dt // 3600
-
-        str_dt = ""
-        if h > 0:
-            str_dt += f"{h}h "
-        if minutes > 0:
-            str_dt += f"{minutes}m "
-        if sec > 0:
-            str_dt += f"{sec}s"
 
         if sys.stderr.isatty():
             print("\033[35m", end='', file=sys.stderr)
-        print(f'{str_dt} | {format_si(total_tokens)} Tok ({int(100*cached_tokens/input_tokens)}% CH, {format_si(input_tokens)} In, {format_si(output_tokens)} Out) | $ {cost:0.5f}', file=sys.stderr)
+        print(f'{format_dt(dt)} | {format_si(total_tokens,compact=True)} Tok ({int(100*cached_tokens/input_tokens)}% CH, {format_si(input_tokens, compact=True)} In, {format_si(output_tokens, compact=True)} Out) | $ {cost:0.5f}', file=sys.stderr)
         if sys.stderr.isatty():
             print("\033[0m", end='', file=sys.stderr)
             print('\033[?25h', end='', file=sys.stderr)
@@ -350,140 +400,55 @@ if args.language:
 
 else:
 
-    # try to match regex
-    for regex_pattern in config["regex_routing"]:
-
-        def parse_arg(arg, argv, prompt, word_regex, join_str):
-            if "[]" in  arg:
-                return [ arg.replace("[]", x) for x in argv ]
-
-            m = re.search("\\[[0-9]+\\]", arg)
-            if m is not None:
-                i = int(m[0][1:-1])
-                return [ re.sub("\\[[0-9]+\\]", argv[i], arg) ]
-
-            m = re.search("\\[[0-9]+:\\]", arg)
-            if m is not None:
-                i0 = int(m[0][1:-2])
-                return [ re.sub("\\[[0-9]+:\\]", x, arg) for x in argv[i0:] ]
-
-            m = re.search("\\[:[0-9]+\\]", arg)
-            if m is not None:
-                i1 = int(m[0][2:-1])
-                return [ re.sub("\\[:[0-9]+\\]", x, arg) for x in argv[:i1] ]
-
-            m = re.search("\\[[0-9]+:[0-9]+\\]", arg)
-            if m is not None:
-                i0 = int(m[0].split(":")[0][1:])
-                i1 = int(m[0].split(":")[1][:-1])
-                return [ re.sub("\\[:[0-9]+\\]", x, arg) for x in argv[i0:i1] ]
-
-            if "{}" in  arg:
-                arg = arg.replace("{}", user_prompt)
-
-            v = re.findall(word_regex, user_prompt)
-            m = re.search("{[0-9]+}", arg)
-            while m is not None:
-                i = int(m[0][1:-1])
-                arg = arg.replace(m[0], v[i])
-                m = re.search("{[0-9]+}", arg)
-
-            m = re.search("{[0-9]+:}", arg)
-            while m is not None:
-                i0 = int(m[0][1:-2])
-                arg = arg.replace(m[0], join_str.join(v[i0:]))
-                m = re.search("{[0-9]+:}", arg)
-
-            m = re.search("{:[0-9]+}", arg)
-            while m is not None:
-                i1 = int(m[0][2:-1])
-                arg = arg.replace(m[0], join_str.join(v[:i1]))
-                m = re.search("{:[0-9]+}", arg)
-
-            m = re.search("{[0-9]+:[0-9]+}", arg)
-            while m is not None:
-                i0 = int(m[0].split(":")[0][1:])
-                i1 = int(m[0].split(":")[1][:-1])
-                arg = arg.replace(m[0], join_str.join(v[i0:i1]))
-                m = re.search("{[0-9]+:[0-9]+}", arg)
-
-            return [arg]
-
-
-        if re.search(regex_pattern, user_prompt) is not None:
-            cmd = config["regex_routing"][regex_pattern]["cmd"]
-            if "word" not in config["regex_routing"][regex_pattern]:
-                config["regex_routing"][regex_pattern]["word"] = "[^ ]"
-            if "join" not in config["regex_routing"][regex_pattern]:
-                config["regex_routing"][regex_pattern]["join"] = " "
-            cmd = [
-                x for v in [
-                    parse_arg(x,
-                              [y for y in sys.argv if y != '-db' and y != "--debug"],
-                              user_prompt,
-                              config["regex_routing"][regex_pattern]["word"],
-                              config["regex_routing"][regex_pattern]["join"]) for x in cmd
-                ] for x in v
-            ]
-            process = subprocess.Popen(
-                cmd,
-                stdin=sys.stdin,
-                text=True
-            )
-
-            process.communicate()
-            sys.stdout.flush()
-            sys.stderr.flush()
-
-            if (args.debug or config['always_debug']):
-                if sys.stderr.isatty():
-                    print("\033[36m", end='', file=sys.stderr)
-                header  = "#!/usr/bin/env python3\n"
-                #print(f"REGEX MATCH ({regex_pattern})\n{json.dumps(config["regex_routing"][regex_pattern], indent=2)}\n{cmd}", file=sys.stderr)
-                print(f"REGEX MATCH ({regex_pattern})\ncmd={cmd}\ndescription: {config['regex_routing'][regex_pattern]['description']}", file=sys.stderr)
-                if sys.stderr.isatty():
-                    print("\033[0m", end='', file=sys.stderr)
-
-            exit(0)
-
-
-
-
-
-    prompt = template.replace("{{prompt}}", user_prompt)
     try:
-        reply = filter_code(llm_request(prompt, api_config)[0])
 
-        if config["sandbox"]:
-            cmd = [
-                    "bwrap",
-                    "--ro-bind", "/usr", "/usr",
-                    "--symlink", "usr/bin",   "/bin",
-                    "--symlink", "usr/lib",   "/lib",
-                    "--symlink", "usr/lib64", "/lib64",
-                    "--unshare-all",
-                    "--new-session",
-                    config["python_cmd"], "-c", reply
-            ]
+        preamble = None
+        if len(user_prompt) == 0:
+            cmd = ["cat", "-"]
         else:
-            cmd = [config["python_cmd"], "-c", reply]
+            prompt = template.replace("{{prompt}}", user_prompt)
 
-        process = subprocess.Popen(
-            cmd,
-            stdin=sys.stdin,
-            text=True
-        )
+            if args.sample:
+                if args.jsonl_files:
+                    # fail if first line is not correct
+                    handles = [open(p) for p in args.jsonl_files]
+                    first_line = json.dumps([json.loads(next(h)) for h in handles])
+                    for h in handles:
+                        h.close()
+                else:
+                    first_line = next(sys.stdin)
+                prompt = prompt.replace("{{sample}}", first_line)
+                preamble = first_line
 
-        process.communicate()
+            start = time()
+            out = llm_request(prompt, api_config)
+            dt = int(time()-start)
+            reply = filter_code(out[0])
 
-        if config['log_path'] is not None and not args.no_log:
+            if config["sandbox"]:
+                cmd = [
+                        "bwrap",
+                        "--ro-bind", "/usr", "/usr",
+                        "--symlink", "usr/bin",   "/bin",
+                        "--symlink", "usr/lib",   "/lib",
+                        "--symlink", "usr/lib64", "/lib64",
+                        "--unshare-all",
+                        "--new-session",
+                        config["python_cmd"], "-c", reply
+                ]
+            else:
+                cmd = [config["python_cmd"], "-c", reply]
+
+        run_subprocess(cmd, preamble=preamble)
+
+        if config['log_path'] is not None and not args.no_log and len(user_prompt) > 0:
             log_path = os.path.expanduser(config['log_path'])
             with open(log_path, 'a') as f:
                 f.write(json.dumps({
                     "prompt": user_prompt,
                     "template_sha256": hashlib.sha256(template.encode()).hexdigest()[:32],
                     "payload": api_config['payload'],
-                    "output": reply,
+                    "output": out[1],
                     })+"\n")
 
 
@@ -491,9 +456,27 @@ else:
         traceback.print_exc()
     finally:
         if (args.debug or config['always_debug']) and 'reply' in globals():
+
+            cost = 0
+            total_tokens = 0
+            input_tokens = 0
+            output_tokens = 0
+
+            if "usage" in out[1] and "cost" in out[1]["usage"] and isinstance(out[1]["usage"]["cost"], Number):
+                cost += out[1]["usage"]["cost"]
+            if "usage" in out[1] and "total_tokens" in out[1]["usage"]:
+                total_tokens += out[1]["usage"]["total_tokens"]
+
+                # assume that if total_tokes is in usage, input and output also is...
+                input_tokens += out[1]["usage"]["input_tokens"]
+                output_tokens += out[1]["usage"]["output_tokens"]
+
+
             if sys.stderr.isatty():
                 print("\033[36m", end='', file=sys.stderr)
+
             header  = "#!/usr/bin/env python3\n"
+            header += f"# {format_dt(dt)} | {format_si(total_tokens, compact=True)} Tok ({format_si(input_tokens, compact=True)} In, {format_si(output_tokens, compact=True)} Out) | $ {cost:0.5f}\n"
             print(header + reply.strip(), file=sys.stderr)
             if sys.stderr.isatty():
                 print("\033[0m", end='', file=sys.stderr)
