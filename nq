@@ -42,52 +42,18 @@ SI_PREFIXES = [
 
 
 def format_si(n: int, decimals: int = 2) -> str:
-    """Format an integer with an SI prefix.
-
-    Parameters
-    ----------
-    n : int
-        The integer to format.
-    decimals : int, optional
-        Number of decimal places in the output (default 2).
-
-    Returns
-    -------
-    str
-        Formatted string like ``"1.23k"``, ``"4.56M"``, or ``"789"``.
-
-    Examples
-    --------
-    >>> format_si(1_234)
-    '1.23k'
-    >>> format_si(12_345_678, decimals=1)
-    '12.3M'
-    >>> format_si(999)
-    '999.00'
-    >>> format_si(1_000_000_000_000_000_000)
-    '1.00E'
-    >>> format_si(999_999_999, 0)
-    '1G'
-    """
-
     if n < 0:
         return f"-{format_si(-n, decimals)}"
-
     if n < 10**3:
         return f"{n}"
-
-    # Pick starting prefix based on magnitude
     exp = math.floor(math.log10(n))
     idx = min(exp // 3 - 1, len(SI_PREFIXES) - 1)
     threshold, prefix = SI_PREFIXES[idx]
-
-    # Bump up if rounding would push the scaled value to 1000+
     scaled = n / threshold
     while round(scaled, decimals) >= 1000 and idx < len(SI_PREFIXES) - 1:
         idx += 1
         threshold, prefix = SI_PREFIXES[idx]
         scaled = n / threshold
-
     return f"{scaled:.{decimals}f}{prefix}"
 
 
@@ -224,8 +190,8 @@ programming.add_argument(
     help="enter programmatic mode"
 )
 programming.add_argument(
-    "-e",
-    "--example",
+    "-s",
+    "--sample",
     action="store_true",
     help="use the first line in the prompt"
 )
@@ -250,7 +216,6 @@ programming.add_argument(
     metavar="FILE"
 )
 
-
 args = parser.parse_args()
 
 if sys.stderr.isatty():
@@ -265,8 +230,8 @@ else:
     if not args.prog and args.jsonl_files is None:
         filename = "language_template.md"
     else:
-        if args.example:
-            filename = "programming_template_with_example.md"
+        if args.sample:
+            filename = "programming_template_with_sample.md"
         else:
             filename = "programming_template.md"
 
@@ -352,7 +317,6 @@ if not args.prog and args.jsonl_files is None:
         prompts.append((prompt, line.strip()))
 
     start = time()
-
 
     def run(data):
         prompt = data[0]
@@ -446,7 +410,7 @@ else:
         else:
             prompt = template.replace("{{prompt}}", user_prompt)
 
-            if args.example:
+            if args.sample:
                 if args.jsonl_files:
                     # fail if first line is not correct
                     handles = [open(p) for p in args.jsonl_files]
@@ -455,7 +419,7 @@ else:
                         h.close()
                 else:
                     first_line = next(sys.stdin)
-                prompt = prompt.replace("{{example}}", first_line)
+                prompt = prompt.replace("{{sample}}", first_line)
                 preamble = first_line
 
 
@@ -477,7 +441,7 @@ else:
 
         run_subprocess(cmd, preamble=preamble)
 
-        if config['og_path'] is not None and not args.no_log and len(user_prompt) > 0:
+        if config['log_path'] is not None and not args.no_log and len(user_prompt) > 0:
             log_path = os.path.expanduser(config['log_path'])
             with open(log_path, 'a') as f:
                 f.write(json.dumps({
