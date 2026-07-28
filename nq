@@ -382,7 +382,9 @@ if not args.prog and args.jsonl_files is None:
                 print('\033[2K', file=sys.stderr, end='', flush=True)
                 print(str_out, end='')
 
-                print(f'{"\033[35m" if sys.stderr.isatty() else ""}ETA: {format_dt(dt)} ({math.floor(100 * i / len(v)):2d}%) | {format_si(total_tokens)} Tok ({int(100*cached_tokens/input_tokens)}% CH, {format_si(input_tokens)} In, {format_si(output_tokens)} Out) | $ {cost:0.5f} / $ {estimated_cost:0.5f}{"\033[0m" if sys.stderr.isatty() else ""}\r', file=sys.stderr, end='')
+                color_on = "\033[35m" if sys.stderr.isatty() else ""
+                color_off = "\033[0m" if sys.stderr.isatty() else ""
+                print(f'{color_on}ETA: {format_dt(dt)} ({math.floor(100 * i / len(v)):2d}%) | {format_si(total_tokens)} Tok ({int(100*cached_tokens/input_tokens)}% CH, {format_si(input_tokens)} In, {format_si(output_tokens)} Out) | $ {cost:0.5f} / $ {estimated_cost:0.5f}{color_off}\r', file=sys.stderr, end='')
                 str_out = ""
 
         print('\033[2K', file=sys.stderr, end='', flush=True)
