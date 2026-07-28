@@ -81,6 +81,57 @@ def filter_code(code):
     code = code[len("```python\n"):-len("```")]
     return code
 
+def emb_request(prompt, api_config, user_data=None):
+    api_key = "none"
+    if not api_key:
+        raise ValueError("Please set the OPENAI_API_KEY environment variable.")
+
+    headers = {
+        "Authorization": f"Bearer {api_config['key']}",
+        "Content-Type": "application/json",
+    }
+    while api_config['url'][-1] == "/":
+        api_config['url'] = api_config['url'][:-1]
+    url = api_config['url'] + "/v1/embeddings"
+    payload = api_config['payload'].copy()
+    payload['input'] = [
+        prompt
+    ]
+
+    if user_data is not None:
+        payload['input'][0] += user_data
+
+    data = json.dumps(payload).encode("utf-8")
+    req = Request(
+            url,
+            data=data,
+            headers=headers,
+            method="POST",
+            )
+
+    n_errors = 0
+
+    res_json = None
+
+    while True:
+        try:
+            with urlopen(req) as response:
+                res_body = response.read().decode("utf-8")
+                res_json = json.loads(res_body)
+                text = res_json["data"][-1]["embedding"]
+                return text, res_json
+            break
+
+        except HTTPError as e:
+            if n_errors < 10:
+                n_errors += 1
+            else:
+                error_info = e.read().decode("utf-8")
+                # raise RuntimeError(
+                #     f"API Error (Status {e.code}): {error_info}"
+                # ) from e
+                return None, res_json
+
 def llm_request(prompt, api_config, user_data=None):
     api_key = "none"
     if not api_key:
@@ -121,7 +172,7 @@ def llm_request(prompt, api_config, user_data=None):
             with urlopen(req) as response:
                 res_body = response.read().decode("utf-8")
                 res_json = json.loads(res_body)
-                text = res_json["output"][-1]["content"][-1]["text"]
+                text = res_json["output"][-1]["content"][-1]["text"].strip()
                 return text, res_json
             break
 
@@ -157,7 +208,7 @@ general.add_argument(
     "--model",
     type=str,
     default=api_config['default'],
-    choices=[x for x in api_config if x != 'default']
+    choices=[x for x in list(api_config["embeddings"])+list(api_config["responses"]) if x != 'default']
 )
 general.add_argument(
     "-t",
@@ -239,22 +290,37 @@ args = parser.parse_args()
 if sys.stderr.isatty():
     print('\033[?25l', end='', file=sys.stderr)
 
-api_config = api_config[args.model]
+# make sure models are not repeated
+emb_names = list(api_config["embeddings"].keys())
+llm_names = list(api_config["responses"].keys())
+assert len( set(emb_names + llm_names) ) == len(emb_names) + len(llm_names)
+
+if args.model in api_config["responses"]:
+    api_config = api_config["responses"][args.model]
+    request = llm_request
+elif args.model in api_config["embeddings"]:
+    api_config = api_config["embeddings"][args.model]
+    request = emb_request
+
 
 if args.template is not None:
     with open(args.template, "r") as f:
         template = f.read()
 else:
-    if not args.prog and args.jsonl_files is None:
-        filename = "language_template.md"
-    else:
-        if args.sample:
-            filename = "programming_template_with_sample.md"
-        else:
-            filename = "programming_template.md"
 
-    with open(f"{config_folder}/{filename}", "r") as f:
-        template = f.read()
+    if len(args.prompt) == 0:
+        template = ""
+    else:
+        if not args.prog and args.jsonl_files is None:
+            filename = "language_template.md"
+        else:
+            if args.sample:
+                filename = "programming_template_with_sample.md"
+            else:
+                filename = "programming_template.md"
+
+        with open(f"{config_folder}/{filename}", "r") as f:
+            template = f.read()
 
 
 with open(f"{config_folder}/config.json", "r") as f:
@@ -315,7 +381,6 @@ def run_subprocess(cmd, preamble=None):
 
 
 if not args.prog and args.jsonl_files is None:
-    inputs = []
     prompts = []
     i = 0
 
@@ -329,7 +394,6 @@ if not args.prog and args.jsonl_files is None:
     for line in v:
         if args.json:
             line = json.loads(line)
-        inputs.append(line.strip())
         prompt = template.replace("{{prompt}}", user_prompt)
         #prompt = prompt.replace("{{data}}", line.strip())
         prompts.append((prompt, line.strip()))
@@ -339,7 +403,7 @@ if not args.prog and args.jsonl_files is None:
     def run(data):
         prompt = data[0]
         user_data = data[1]
-        return llm_request(prompt, api_config, user_data = user_data)
+        return request(prompt, api_config, user_data = user_data)
 
     cost = 0
     total_tokens = 0
@@ -358,20 +422,24 @@ if not args.prog and args.jsonl_files is None:
                 total_tokens += out[1]["usage"]["total_tokens"]
 
                 # assume that if total_tokes is in usage, input and output also is...
-                input_tokens += out[1]["usage"]["input_tokens"]
-
-                output_tokens += out[1]["usage"]["output_tokens"]
+                if "input_tokens" in out[1]["usage"]:
+                    input_tokens += out[1]["usage"]["input_tokens"]
+                if "prompt_tokens" in out[1]["usage"]:
+                    input_tokens += out[1]["usage"]["prompt_tokens"]
+    
+                if "output_tokens" in out[1]["usage"]:
+                    output_tokens += out[1]["usage"]["output_tokens"]
 
                 if "input_tokens_details" in  out[1]["usage"] and   "cached_tokens" in out[1]["usage"]["input_tokens_details"]:
                     cached_tokens += out[1]["usage"]["input_tokens_details"]["cached_tokens"]
 
             reply = out[0]
-            input = inputs[i]
+            _prompt = prompts[i]
 
             if args.verbose:
-                str_out += json.dumps(out[1], ensure_ascii=False) + "\n"
+                str_out += json.dumps({"prompt": "".join(_prompt)} | out[1], ensure_ascii=False) + "\n"
             else:
-                str_out += json.dumps(reply.strip(), ensure_ascii=False) + "\n"
+                str_out += json.dumps(reply, ensure_ascii=False) + "\n"
 
             if time() - last > .1 and i != 0:
                 last = time()
@@ -423,7 +491,7 @@ else:
                 preamble = first_line
 
             start = time()
-            out = llm_request(prompt, api_config)
+            out = request(prompt, api_config)
             dt = int(time()-start)
             reply = filter_code(out[0])
 

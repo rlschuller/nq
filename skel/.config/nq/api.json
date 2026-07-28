@@ -1,24 +1,37 @@
 {
     "default": "rick",
-    "rick": {
-        "url": "http://10.0.3.0:11434",
-        "key": "none",
-        "max_threads": 32,
-        "payload": {
-            "model": "gemma4:12b",
-            "reasoning": {
-                "effort": "none"
+    "embeddings": {
+        "f2llm": {
+            "url": "http://localhost:4003",
+            "key": "none",
+            "max_threads": 128,
+            "payload": {
+               "model": "codefuse-ai/F2LLM-v2-14B",
+               "encoding_format": "float"
             }
         }
     },
-    "remote": {
-        "url": "http://localhost:4003",
-        "key": "none",
-        "max_threads": 32,
-        "payload": {
-            "model": "google/gemma-4-31B-it",
-            "reasoning": {
-                "effort": "none"
+    "responses": {
+        "rick": {
+            "url": "http://10.0.3.0:11434",
+            "key": "none",
+            "max_threads": 32,
+            "payload": {
+                "model": "gemma4:12b",
+                "reasoning": {
+                    "effort": "none"
+                }
+            }
+        },
+        "remote": {
+            "url": "http://localhost:4003",
+            "key": "none",
+            "max_threads": 32,
+            "payload": {
+                "model": "google/gemma-4-31B-it",
+                "reasoning": {
+                    "effort": "none"
+                }
             }
         }
     }
