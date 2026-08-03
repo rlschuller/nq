@@ -130,6 +130,7 @@ def emb_request(prompt, api_config, user_data=None):
                 # raise RuntimeError(
                 #     f"API Error (Status {e.code}): {error_info}"
                 # ) from e
+                print(f"\033[31mAPI Error (Status {e.code}): {error_info}\033[0m", file=sys.stderr, flush=True)
                 return None, res_json
 
 def llm_request(prompt, api_config, user_data=None):
@@ -184,6 +185,7 @@ def llm_request(prompt, api_config, user_data=None):
                 # raise RuntimeError(
                 #     f"API Error (Status {e.code}): {error_info}"
                 # ) from e
+                print(f"\033[31mAPI Error (Status {e.code}): {error_info}\033[0m", file=sys.stderr, flush=True)
                 return None, res_json
 
 home = os.path.expanduser("~")
@@ -415,23 +417,24 @@ if not args.prog and args.jsonl_files is None:
         last = time()
         for i, out in enumerate(executor.map(run, prompts)):
 
-            if "usage" in out[1] and "cost" in out[1]["usage"] and isinstance(out[1]["usage"]["cost"], Number):
-                cost += out[1]["usage"]["cost"]
+            if out[1] is not None and "usage" in out[1]:
+                if "cost" in out[1]["usage"] and isinstance(out[1]["usage"]["cost"], Number):
+                    cost += out[1]["usage"]["cost"]
 
-            if "usage" in out[1] and "total_tokens" in out[1]["usage"]:
-                total_tokens += out[1]["usage"]["total_tokens"]
+                if "total_tokens" in out[1]["usage"]:
+                    total_tokens += out[1]["usage"]["total_tokens"]
 
-                # assume that if total_tokes is in usage, input and output also is...
-                if "input_tokens" in out[1]["usage"]:
-                    input_tokens += out[1]["usage"]["input_tokens"]
-                if "prompt_tokens" in out[1]["usage"]:
-                    input_tokens += out[1]["usage"]["prompt_tokens"]
-    
-                if "output_tokens" in out[1]["usage"]:
-                    output_tokens += out[1]["usage"]["output_tokens"]
+                    # assume that if total_tokes is in usage, input and output also is...
+                    if "input_tokens" in out[1]["usage"]:
+                        input_tokens += out[1]["usage"]["input_tokens"]
+                    if "prompt_tokens" in out[1]["usage"]:
+                        input_tokens += out[1]["usage"]["prompt_tokens"]
+        
+                    if "output_tokens" in out[1]["usage"]:
+                        output_tokens += out[1]["usage"]["output_tokens"]
 
-                if "input_tokens_details" in  out[1]["usage"] and   "cached_tokens" in out[1]["usage"]["input_tokens_details"]:
-                    cached_tokens += out[1]["usage"]["input_tokens_details"]["cached_tokens"]
+                    if "input_tokens_details" in  out[1]["usage"] and   "cached_tokens" in out[1]["usage"]["input_tokens_details"]:
+                        cached_tokens += out[1]["usage"]["input_tokens_details"]["cached_tokens"]
 
             reply = out[0]
             _prompt = prompts[i]
@@ -449,20 +452,28 @@ if not args.prog and args.jsonl_files is None:
 
                 print('\033[2K', file=sys.stderr, end='', flush=True)
                 print(str_out, end='')
+                if input_tokens == 0:
+                    cache_hit = 100
+                else:
+                    cache_hit = int(100*cached_tokens/input_tokens)
 
                 color_on = "\033[35m" if sys.stderr.isatty() else ""
                 color_off = "\033[0m" if sys.stderr.isatty() else ""
-                print(f'{color_on}ETA: {format_dt(dt)} ({math.floor(100 * i / len(v)):2d}%) | {format_si(total_tokens)} Tok ({int(100*cached_tokens/input_tokens)}% CH, {format_si(input_tokens)} In, {format_si(output_tokens)} Out) | $ {cost:0.5f} / $ {estimated_cost:0.5f}{color_off}\r', file=sys.stderr, end='')
+                print(f'{color_on}ETA: {format_dt(dt)} ({math.floor(100 * i / len(v)):2d}%) | {format_si(total_tokens)} Tok ({cache_hit}% CH, {format_si(input_tokens)} In, {format_si(output_tokens)} Out) | $ {cost:0.5f} / $ {estimated_cost:0.5f}{color_off}\r', file=sys.stderr, end='')
                 str_out = ""
 
         print('\033[2K', file=sys.stderr, end='', flush=True)
         print(str_out, end='')
 
         dt = int(time()-start)
-
+       
+        if input_tokens == 0:
+            cache_hit = 100
+        else:
+            cache_hit = int(100*cached_tokens/input_tokens)
         if sys.stderr.isatty():
             print("\033[35m", end='', file=sys.stderr)
-        print(f'{format_dt(dt)} | {format_si(total_tokens,compact=True)} Tok ({int(100*cached_tokens/input_tokens)}% CH, {format_si(input_tokens, compact=True)} In, {format_si(output_tokens, compact=True)} Out) | $ {cost:0.5f}', file=sys.stderr)
+        print(f'{format_dt(dt)} | {format_si(total_tokens,compact=True)} Tok ({cache_hit}% CH, {format_si(input_tokens, compact=True)} In, {format_si(output_tokens, compact=True)} Out) | $ {cost:0.5f}', file=sys.stderr)
         if sys.stderr.isatty():
             print("\033[0m", end='', file=sys.stderr)
             print('\033[?25h', end='', file=sys.stderr)
