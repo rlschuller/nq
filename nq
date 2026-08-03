@@ -133,37 +133,33 @@ def emb_request(prompt, api_config, user_data=None):
                 print(f"\033[31mAPI Error (Status {e.code}): {error_info}\033[0m", file=sys.stderr, flush=True)
                 return None, res_json
 
-def llm_request(prompt, api_config, user_data=None):
-    api_key = "none"
+
+
+def llm_request(prompt, api_config, user_data):
+    api_key = api_config.get("key")
     if not api_key:
-        raise ValueError("Please set the OPENAI_API_KEY environment variable.")
+        raise ValueError("Please provide an API key.")
 
     headers = {
-        "Authorization": f"Bearer {api_config['key']}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-    while api_config['url'][-1] == "/":
-        api_config['url'] = api_config['url'][:-1]
-    url = api_config['url'] + "/v1/responses"
-    payload = api_config['payload'].copy()
-    payload['input'] = [
-        {"role": "developer", "content": prompt }
-    ]
 
-    if user_data is not None:
-        payload['input'].append(
-            {"role": "user", "content": user_data }
-        )
+    base_url = api_config["url"].rstrip("/")
+    if not base_url:
+        raise ValueError("Please provide a valid API URL.")
 
+    payload = api_config.get("payload", {}).copy()
+    payload["instructions"] = prompt
+    payload["input"] = user_data
 
     data = json.dumps(payload).encode("utf-8")
     req = Request(
-            url,
-            data=data,
-            headers=headers,
-            method="POST",
-            )
-
+        f"{base_url}/v1/responses",
+        data=data,
+        headers=headers,
+        method="POST",
+    )
     n_errors = 0
 
     res_json = None
